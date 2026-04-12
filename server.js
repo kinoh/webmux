@@ -181,6 +181,9 @@ app.get("/", (_req, res) => {
       font-size: 13px;
       line-height: 1.45;
       flex: 1;
+      background: var(--bg);
+      --ansi-default-fg: var(--text);
+      --ansi-default-bg: var(--bg);
     }
     .inputbar {
       display: grid;
@@ -369,11 +372,37 @@ app.get("/", (_req, res) => {
     const sendCtrlCBtn = document.getElementById("sendCtrlCBtn");
     const sendEscBtn = document.getElementById("sendEscBtn");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
+    const ANSI_ESCAPE = String.fromCharCode(27);
+    const ANSI_BELL = String.fromCharCode(7);
+    const ANSI_SGR_PATTERN = new RegExp(ANSI_ESCAPE + "\\\\[([0-9;]*)m", "g");
+    const ANSI_CONTROL_PATTERN = new RegExp(
+      ANSI_ESCAPE + "(?:\\\\[[0-?]*[ -/]*[@-~]|\\\\][^" + ANSI_BELL + "]*(?:" + ANSI_BELL + "|" + ANSI_ESCAPE + "\\\\\\\\))",
+      "g"
+    );
+    const ANSI_BASE_COLORS = [
+      "#000000",
+      "#800000",
+      "#008000",
+      "#808000",
+      "#000080",
+      "#800080",
+      "#008080",
+      "#c0c0c0",
+      "#808080",
+      "#ff0000",
+      "#00ff00",
+      "#ffff00",
+      "#0000ff",
+      "#ff00ff",
+      "#00ffff",
+      "#ffffff",
+    ];
 
     let panes = [];
     let selectedPaneId = null;
     let selectedSessionName = "";
     let captureTimer = null;
+    let lastCaptureRaw = "";
 
     function isCompactLayout() {
       return compactLayoutQuery.matches;
@@ -425,6 +454,212 @@ app.get("/", (_req, res) => {
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
+    }
+
+    function createAnsiState() {
+      return {
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
+        inverse: false,
+        strike: false,
+        fg: null,
+        bg: null,
+      };
+    }
+
+    function resetAnsiState(state) {
+      Object.assign(state, createAnsiState());
+    }
+
+    function paletteColor(index) {
+      if (index < 0 || index > 255) {
+        return null;
+      }
+
+      if (index < 16) {
+        return ANSI_BASE_COLORS[index];
+      }
+
+      if (index < 232) {
+        const offset = index - 16;
+        const red = Math.floor(offset / 36);
+        const green = Math.floor((offset % 36) / 6);
+        const blue = offset % 6;
+        const steps = [0, 95, 135, 175, 215, 255];
+        return \`rgb(\${steps[red]}, \${steps[green]}, \${steps[blue]})\`;
+      }
+
+      const value = 8 + ((index - 232) * 10);
+      return \`rgb(\${value}, \${value}, \${value})\`;
+    }
+
+    function readExtendedColor(codes, index) {
+      const mode = codes[index + 1];
+
+      if (mode === 5 && Number.isInteger(codes[index + 2])) {
+        return {
+          color: paletteColor(codes[index + 2]),
+          nextIndex: index + 2,
+        };
+      }
+
+      if (
+        mode === 2 &&
+        Number.isInteger(codes[index + 2]) &&
+        Number.isInteger(codes[index + 3]) &&
+        Number.isInteger(codes[index + 4])
+      ) {
+        const red = Math.max(0, Math.min(255, codes[index + 2]));
+        const green = Math.max(0, Math.min(255, codes[index + 3]));
+        const blue = Math.max(0, Math.min(255, codes[index + 4]));
+        return {
+          color: \`rgb(\${red}, \${green}, \${blue})\`,
+          nextIndex: index + 4,
+        };
+      }
+
+      return {
+        color: null,
+        nextIndex: index,
+      };
+    }
+
+    function applyAnsiCodes(state, rawCodes) {
+      const codes = rawCodes.length === 0
+        ? [0]
+        : rawCodes.map((code) => (code === "" ? 0 : Number(code))).filter(Number.isFinite);
+
+      if (codes.length === 0) {
+        resetAnsiState(state);
+        return;
+      }
+
+      for (let index = 0; index < codes.length; index += 1) {
+        const code = codes[index];
+
+        if (code === 0) {
+          resetAnsiState(state);
+        } else if (code === 1) {
+          state.bold = true;
+        } else if (code === 2) {
+          state.dim = true;
+        } else if (code === 3) {
+          state.italic = true;
+        } else if (code === 4) {
+          state.underline = true;
+        } else if (code === 7) {
+          state.inverse = true;
+        } else if (code === 9) {
+          state.strike = true;
+        } else if (code === 22) {
+          state.bold = false;
+          state.dim = false;
+        } else if (code === 23) {
+          state.italic = false;
+        } else if (code === 24) {
+          state.underline = false;
+        } else if (code === 27) {
+          state.inverse = false;
+        } else if (code === 29) {
+          state.strike = false;
+        } else if (code >= 30 && code <= 37) {
+          state.fg = ANSI_BASE_COLORS[code - 30];
+        } else if (code === 39) {
+          state.fg = null;
+        } else if (code >= 40 && code <= 47) {
+          state.bg = ANSI_BASE_COLORS[code - 40];
+        } else if (code === 49) {
+          state.bg = null;
+        } else if (code >= 90 && code <= 97) {
+          state.fg = ANSI_BASE_COLORS[code - 90 + 8];
+        } else if (code >= 100 && code <= 107) {
+          state.bg = ANSI_BASE_COLORS[code - 100 + 8];
+        } else if (code === 38 || code === 48) {
+          const target = code === 38 ? "fg" : "bg";
+          const { color, nextIndex } = readExtendedColor(codes, index);
+          if (color) {
+            state[target] = color;
+          }
+          index = nextIndex;
+        }
+      }
+    }
+
+    function buildAnsiStyle(state) {
+      let foreground = state.fg;
+      let background = state.bg;
+
+      if (state.inverse) {
+        foreground = state.bg || "var(--ansi-default-bg)";
+        background = state.fg || "var(--ansi-default-fg)";
+      }
+
+      const declarations = [];
+
+      if (foreground) {
+        declarations.push(\`color:\${foreground}\`);
+      }
+      if (background) {
+        declarations.push(\`background-color:\${background}\`);
+      }
+      if (state.bold) {
+        declarations.push("font-weight:700");
+      }
+      if (state.dim) {
+        declarations.push("opacity:0.75");
+      }
+      if (state.italic) {
+        declarations.push("font-style:italic");
+      }
+
+      const decorations = [];
+      if (state.underline) {
+        decorations.push("underline");
+      }
+      if (state.strike) {
+        decorations.push("line-through");
+      }
+      if (decorations.length > 0) {
+        declarations.push(\`text-decoration:\${decorations.join(" ")}\`);
+      }
+
+      return declarations.join(";");
+    }
+
+    function renderAnsiToHtml(text) {
+      const state = createAnsiState();
+      let html = "";
+      let lastIndex = 0;
+      let match;
+
+      while ((match = ANSI_SGR_PATTERN.exec(text)) !== null) {
+        const chunk = text
+          .slice(lastIndex, match.index)
+          .replaceAll(ANSI_CONTROL_PATTERN, "");
+        if (chunk.length > 0) {
+          const escapedChunk = escapeHtml(chunk);
+          const style = buildAnsiStyle(state);
+          html += style
+            ? \`<span style="\${style}">\${escapedChunk}</span>\`
+            : escapedChunk;
+        }
+
+        applyAnsiCodes(state, match[1] ? match[1].split(";") : []);
+        lastIndex = ANSI_SGR_PATTERN.lastIndex;
+      }
+
+      const tail = text.slice(lastIndex).replaceAll(ANSI_CONTROL_PATTERN, "");
+      if (tail.length > 0) {
+        const escapedTail = escapeHtml(tail);
+        const style = buildAnsiStyle(state);
+        html += style
+          ? \`<span style="\${style}">\${escapedTail}</span>\`
+          : escapedTail;
+      }
+
+      return html;
     }
 
     function renderPanes() {
@@ -484,7 +719,8 @@ app.get("/", (_req, res) => {
           await loadCapture();
         } else {
           selectedTitleEl.textContent = "paneが見つからないよ";
-          captureEl.textContent = "";
+          captureEl.innerHTML = "";
+          lastCaptureRaw = "";
           setStatus("tmux paneなし");
         }
       } catch (error) {
@@ -504,8 +740,9 @@ app.get("/", (_req, res) => {
 
         setStatus("capture取得中...");
         const data = await api(\`/api/capture?paneId=\${encodeURIComponent(selectedPaneId)}&lines=\${lines}\`);
-        if (captureEl.textContent !== data.content) {
-          captureEl.textContent = data.content;
+        if (lastCaptureRaw !== data.content) {
+          captureEl.innerHTML = renderAnsiToHtml(data.content);
+          lastCaptureRaw = data.content;
           setStatus("capture更新ずみ");
           return;
         }
@@ -649,6 +886,7 @@ app.get("/api/capture", async (req, res) => {
       "capture-pane",
       "-t",
       paneId,
+      "-e",
       "-p",
       "-S",
       `-${lines}`,
