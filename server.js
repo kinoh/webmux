@@ -324,7 +324,6 @@ app.get("/", (_req, res) => {
           <span>session</span>
           <select id="sessionSelect"></select>
         </label>
-        <button id="refreshPanesBtn">更新</button>
       </div>
     </div>
     <div id="paneList" class="pane-list"></div>
@@ -364,7 +363,6 @@ app.get("/", (_req, res) => {
     const linesInputEl = document.getElementById("linesInput");
     const sessionSelectEl = document.getElementById("sessionSelect");
 
-    const refreshPanesBtn = document.getElementById("refreshPanesBtn");
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
     const sendBtn = document.getElementById("sendBtn");
     const sendEnterBtn = document.getElementById("sendEnterBtn");
@@ -558,7 +556,6 @@ app.get("/", (_req, res) => {
       }
     }
 
-    refreshPanesBtn.addEventListener("click", loadPanes);
     refreshCaptureBtn.addEventListener("click", loadCapture);
     sessionSelectEl.addEventListener("change", async () => {
       selectedSessionName = sessionSelectEl.value;
