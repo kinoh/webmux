@@ -122,6 +122,13 @@ app.get("/", (_req, res) => {
       align-items: center;
       flex-wrap: wrap;
     }
+    .session-picker {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
     button {
       background: var(--panel2);
       color: var(--text);
@@ -184,6 +191,7 @@ app.get("/", (_req, res) => {
       background: var(--panel);
     }
     input[type="text"],
+    select,
     textarea {
       width: 100%;
       background: var(--panel2);
@@ -199,6 +207,7 @@ app.get("/", (_req, res) => {
       font: inherit;
     }
     input[type="text"]:focus,
+    select:focus,
     textarea:focus {
       border-color: var(--accent);
     }
@@ -224,34 +233,39 @@ app.get("/", (_req, res) => {
         overflow: visible;
       }
       .sidebar .header {
-        align-items: center;
+        align-items: flex-start;
+        flex-wrap: wrap;
         padding-bottom: 8px;
       }
       .sidebar .title {
         width: auto;
         white-space: nowrap;
       }
+      .session-picker {
+        display: inline-flex;
+        width: 100%;
+      }
+      .session-picker select {
+        flex: 1;
+        min-width: 0;
+      }
       .pane-list {
         padding: 0 12px 10px;
-        flex-direction: row;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
         gap: 6px;
-        overflow-x: auto;
-        overflow-y: hidden;
-        overscroll-behavior-x: contain;
-        scrollbar-width: none;
-      }
-      .pane-list::-webkit-scrollbar {
-        display: none;
       }
       .pane-item {
-        flex: 0 0 auto;
         padding: 8px 12px;
-        border-radius: 999px;
+        border-radius: 10px;
+        text-align: center;
       }
       .pane-item .line1 {
         margin-bottom: 0;
         font-size: 12px;
         white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .pane-item .line2 {
         display: none;
@@ -288,6 +302,7 @@ app.get("/", (_req, res) => {
       }
       button,
       input[type="text"],
+      select,
       textarea {
         min-height: 42px;
       }
@@ -305,6 +320,10 @@ app.get("/", (_req, res) => {
     <div class="header">
       <div class="title">tmux panes</div>
       <div class="toolbar">
+        <label class="session-picker">
+          <span>session</span>
+          <select id="sessionSelect"></select>
+        </label>
         <button id="refreshPanesBtn">更新</button>
       </div>
     </div>
@@ -343,6 +362,7 @@ app.get("/", (_req, res) => {
     const statusEl = document.getElementById("status");
     const commandInputEl = document.getElementById("commandInput");
     const linesInputEl = document.getElementById("linesInput");
+    const sessionSelectEl = document.getElementById("sessionSelect");
 
     const refreshPanesBtn = document.getElementById("refreshPanesBtn");
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
@@ -350,10 +370,52 @@ app.get("/", (_req, res) => {
     const sendEnterBtn = document.getElementById("sendEnterBtn");
     const sendCtrlCBtn = document.getElementById("sendCtrlCBtn");
     const sendEscBtn = document.getElementById("sendEscBtn");
+    const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
 
     let panes = [];
     let selectedPaneId = null;
+    let selectedSessionName = "";
     let captureTimer = null;
+
+    function isCompactLayout() {
+      return compactLayoutQuery.matches;
+    }
+
+    function getSessionNames() {
+      return [...new Set(panes.map((pane) => pane.sessionName))];
+    }
+
+    function syncSelectedSession() {
+      const pane = panes.find((item) => item.paneId === selectedPaneId);
+      const sessionNames = getSessionNames();
+
+      if (pane) {
+        selectedSessionName = pane.sessionName;
+        return;
+      }
+
+      if (sessionNames.includes(selectedSessionName)) {
+        return;
+      }
+
+      selectedSessionName = sessionNames[0] || "";
+    }
+
+    function renderSessionOptions() {
+      const sessionNames = getSessionNames();
+      syncSelectedSession();
+      sessionSelectEl.innerHTML = sessionNames.map((sessionName) => (
+        \`<option value="\${escapeHtml(sessionName)}">\${escapeHtml(sessionName)}</option>\`
+      )).join("");
+      sessionSelectEl.value = selectedSessionName;
+    }
+
+    function getVisiblePanes() {
+      if (!isCompactLayout()) {
+        return panes;
+      }
+      return panes.filter((pane) => pane.sessionName === selectedSessionName);
+    }
 
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
@@ -368,14 +430,18 @@ app.get("/", (_req, res) => {
     }
 
     function renderPanes() {
-      paneListEl.innerHTML = panes.map((pane) => {
+      renderSessionOptions();
+
+      paneListEl.innerHTML = getVisiblePanes().map((pane) => {
         const active = pane.paneId === selectedPaneId ? "active" : "";
         const title = pane.title || "(no title)";
         const command = pane.currentCommand || "";
         const tooltip = [pane.label, pane.paneId, title, command].filter(Boolean).join(" / ");
+        const compactLabel = pane.windowIndex + "." + pane.paneIndex;
+        const label = isCompactLayout() ? compactLabel : pane.label;
         return \`
           <div class="pane-item \${active}" data-pane-id="\${pane.paneId}" title="\${escapeHtml(tooltip)}">
-            <div class="line1">\${escapeHtml(pane.label)}</div>
+            <div class="line1">\${escapeHtml(label)}</div>
             <div class="line2">\${escapeHtml(title)} / \${escapeHtml(command)}</div>
           </div>
         \`;
@@ -384,6 +450,7 @@ app.get("/", (_req, res) => {
       for (const el of paneListEl.querySelectorAll(".pane-item")) {
         el.addEventListener("click", async () => {
           selectedPaneId = el.dataset.paneId;
+          syncSelectedSession();
           renderPanes();
           await loadCapture();
         });
@@ -412,6 +479,7 @@ app.get("/", (_req, res) => {
           selectedPaneId = panes[0]?.paneId || null;
         }
 
+        syncSelectedSession();
         renderPanes();
 
         if (selectedPaneId) {
@@ -492,12 +560,31 @@ app.get("/", (_req, res) => {
 
     refreshPanesBtn.addEventListener("click", loadPanes);
     refreshCaptureBtn.addEventListener("click", loadCapture);
+    sessionSelectEl.addEventListener("change", async () => {
+      selectedSessionName = sessionSelectEl.value;
+      const sessionPanes = panes.filter((pane) => pane.sessionName === selectedSessionName);
+      if (!sessionPanes.some((pane) => pane.paneId === selectedPaneId)) {
+        selectedPaneId = sessionPanes[0]?.paneId || null;
+      }
+      renderPanes();
+      if (selectedPaneId) {
+        await loadCapture();
+      }
+    });
     sendBtn.addEventListener("click", () => sendInput(false));
     sendEnterBtn.addEventListener("click", () => sendInput(true));
     sendCtrlCBtn.addEventListener("click", () => sendSpecialKey("C-c", "Ctrl+C"));
     sendEscBtn.addEventListener("click", () => sendSpecialKey("Escape", "Esc"));
 
     linesInputEl.addEventListener("change", loadCapture);
+    const handleLayoutChange = () => {
+      renderPanes();
+    };
+    if (typeof compactLayoutQuery.addEventListener === "function") {
+      compactLayoutQuery.addEventListener("change", handleLayoutChange);
+    } else if (typeof compactLayoutQuery.addListener === "function") {
+      compactLayoutQuery.addListener(handleLayoutChange);
+    }
 
     async function start() {
       await loadPanes();
