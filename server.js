@@ -143,6 +143,7 @@ app.get("/", (_req, res) => {
       border-radius: 12px;
       background: var(--panel2);
       cursor: pointer;
+      min-width: 0;
     }
     .pane-item.active {
       border-color: var(--accent);
@@ -212,17 +213,54 @@ app.get("/", (_req, res) => {
     @media (max-width: 800px) {
       body {
         grid-template-columns: 1fr;
-        grid-template-rows: minmax(180px, 34dvh) 1fr;
+        grid-template-rows: auto 1fr;
       }
       .sidebar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
         border-right: 0;
         border-bottom: 1px solid var(--border);
+        overflow: visible;
       }
-      .header {
+      .sidebar .header {
+        align-items: center;
+        padding-bottom: 8px;
+      }
+      .sidebar .title {
+        width: auto;
+        white-space: nowrap;
+      }
+      .pane-list {
+        padding: 0 12px 10px;
+        flex-direction: row;
+        gap: 6px;
+        overflow-x: auto;
+        overflow-y: hidden;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+      }
+      .pane-list::-webkit-scrollbar {
+        display: none;
+      }
+      .pane-item {
+        flex: 0 0 auto;
+        padding: 8px 12px;
+        border-radius: 999px;
+      }
+      .pane-item .line1 {
+        margin-bottom: 0;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .pane-item .line2 {
+        display: none;
+      }
+      .main .header {
         align-items: flex-start;
         flex-wrap: wrap;
       }
-      .title {
+      .main .title {
         width: 100%;
         white-space: normal;
       }
@@ -237,14 +275,14 @@ app.get("/", (_req, res) => {
       }
     }
     @media (max-width: 480px) {
-      body {
-        grid-template-rows: minmax(160px, 30dvh) 1fr;
-      }
       .header,
       .inputbar,
-      .pane-list,
       pre,
       .status {
+        padding-left: 10px;
+        padding-right: 10px;
+      }
+      .pane-list {
         padding-left: 10px;
         padding-right: 10px;
       }
@@ -334,9 +372,10 @@ app.get("/", (_req, res) => {
         const active = pane.paneId === selectedPaneId ? "active" : "";
         const title = pane.title || "(no title)";
         const command = pane.currentCommand || "";
+        const tooltip = [pane.label, pane.paneId, title, command].filter(Boolean).join(" / ");
         return \`
-          <div class="pane-item \${active}" data-pane-id="\${pane.paneId}">
-            <div class="line1">\${escapeHtml(pane.label)} \${escapeHtml(pane.paneId)}</div>
+          <div class="pane-item \${active}" data-pane-id="\${pane.paneId}" title="\${escapeHtml(tooltip)}">
+            <div class="line1">\${escapeHtml(pane.label)}</div>
             <div class="line2">\${escapeHtml(title)} / \${escapeHtml(command)}</div>
           </div>
         \`;
