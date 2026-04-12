@@ -1,0 +1,13 @@
+{
+  "name": "webmux",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal web UI for tmux panes",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
