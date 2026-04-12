@@ -279,7 +279,7 @@ app.get("/", (_req, res) => {
         white-space: normal;
       }
       .inputbar {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
       }
       .inputbar textarea {
         grid-column: 1 / -1;
