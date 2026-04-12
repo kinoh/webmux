@@ -31,6 +31,35 @@ function isValidPaneId(paneId) {
   return typeof paneId === "string" && /^%[0-9]+$/.test(paneId);
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendEnterKey(paneId, shouldDelayBefore = false) {
+  if (shouldDelayBefore) {
+    await sleep(ENTER_DELAY_MS);
+  }
+  await runTmux(["send-keys", "-t", paneId, "Enter"]);
+}
+
+async function sendTextToPane(paneId, text) {
+  const normalizedText = text.replace(/\r\n?/g, "\n");
+  const lines = normalizedText.split("\n");
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const hasNextLine = index < lines.length - 1;
+
+    if (line.length > 0) {
+      await runTmux(["send-keys", "-t", paneId, "-l", line]);
+    }
+
+    if (hasNextLine) {
+      await sendEnterKey(paneId, line.length > 0);
+    }
+  }
+}
+
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
 <html lang="ja">
@@ -153,7 +182,8 @@ app.get("/", (_req, res) => {
       border-top: 1px solid var(--border);
       background: var(--panel);
     }
-    input[type="text"] {
+    input[type="text"],
+    textarea {
       width: 100%;
       background: var(--panel2);
       color: var(--text);
@@ -162,7 +192,13 @@ app.get("/", (_req, res) => {
       padding: 10px 12px;
       outline: none;
     }
-    input[type="text"]:focus {
+    textarea {
+      min-height: 96px;
+      resize: vertical;
+      font: inherit;
+    }
+    input[type="text"]:focus,
+    textarea:focus {
       border-color: var(--accent);
     }
     .status {
@@ -193,7 +229,7 @@ app.get("/", (_req, res) => {
       .inputbar {
         grid-template-columns: 1fr 1fr;
       }
-      .inputbar input {
+      .inputbar textarea {
         grid-column: 1 / -1;
       }
       .inputbar button {
@@ -213,8 +249,12 @@ app.get("/", (_req, res) => {
         padding-right: 10px;
       }
       button,
-      input[type="text"] {
+      input[type="text"],
+      textarea {
         min-height: 42px;
+      }
+      textarea {
+        min-height: 96px;
       }
       #linesInput {
         width: 64px !important;
@@ -250,7 +290,7 @@ app.get("/", (_req, res) => {
     </section>
 
     <section class="inputbar">
-      <input id="commandInput" type="text" placeholder="送信する文字列を入力" />
+      <textarea id="commandInput" placeholder="送信する文字列を入力"></textarea>
       <button id="sendBtn">送信</button>
       <button id="sendEnterBtn">Enterだけ</button>
       <button id="sendCtrlCBtn">Ctrl+C</button>
@@ -382,9 +422,7 @@ app.get("/", (_req, res) => {
             enter: withEnter
           })
         });
-        if (withEnter) {
-          commandInputEl.value = "";
-        }
+        commandInputEl.value = "";
         await loadCapture();
         setStatus("送信したよ");
       } catch (error) {
@@ -416,19 +454,9 @@ app.get("/", (_req, res) => {
     refreshPanesBtn.addEventListener("click", loadPanes);
     refreshCaptureBtn.addEventListener("click", loadCapture);
     sendBtn.addEventListener("click", () => sendInput(false));
-    sendEnterBtn.addEventListener("click", async () => {
-      commandInputEl.value = "";
-      await sendInput(true);
-    });
+    sendEnterBtn.addEventListener("click", () => sendInput(true));
     sendCtrlCBtn.addEventListener("click", () => sendSpecialKey("C-c", "Ctrl+C"));
     sendEscBtn.addEventListener("click", () => sendSpecialKey("Escape", "Esc"));
-
-    commandInputEl.addEventListener("keydown", async (event) => {
-      if (event.key === "Enter" && !event.shiftKey) {
-        event.preventDefault();
-        await sendInput(false);
-      }
-    });
 
     linesInputEl.addEventListener("change", loadCapture);
 
@@ -516,14 +544,11 @@ app.post("/api/send", async (req, res) => {
     }
 
     if (text.length > 0) {
-      await runTmux(["send-keys", "-t", paneId, "-l", text]);
+      await sendTextToPane(paneId, text);
     }
 
     if (enter) {
-      if (text.length > 0) {
-        await new Promise((resolve) => setTimeout(resolve, ENTER_DELAY_MS));
-      }
-      await runTmux(["send-keys", "-t", paneId, "Enter"]);
+      await sendEnterKey(paneId, text.length > 0);
     }
     res.json({ ok: true });
   } catch (error) {
