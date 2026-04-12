@@ -504,8 +504,13 @@ app.get("/", (_req, res) => {
 
         setStatus("capture取得中...");
         const data = await api(\`/api/capture?paneId=\${encodeURIComponent(selectedPaneId)}&lines=\${lines}\`);
-        captureEl.textContent = data.content;
-        setStatus("capture更新ずみ");
+        if (captureEl.textContent !== data.content) {
+          captureEl.textContent = data.content;
+          setStatus("capture更新ずみ");
+          return;
+        }
+
+        setStatus("capture変更なし");
       } catch (error) {
         setStatus(error.message, true);
       }
