@@ -60,6 +60,10 @@ async function sendTextToPane(paneId, text) {
   }
 }
 
+function clampPaneWidth(columns) {
+  return Math.max(20, Math.min(2000, columns));
+}
+
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
 <html lang="ja">
@@ -341,6 +345,7 @@ app.get("/", (_req, res) => {
             行数
             <input id="linesInput" type="text" value="300" style="width:72px;" />
           </label>
+          <button id="fitWidthBtn">幅合わせ</button>
           <button id="refreshCaptureBtn">再読込</button>
         </div>
       </div>
@@ -366,6 +371,7 @@ app.get("/", (_req, res) => {
     const linesInputEl = document.getElementById("linesInput");
     const sessionSelectEl = document.getElementById("sessionSelect");
 
+    const fitWidthBtn = document.getElementById("fitWidthBtn");
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
     const sendBtn = document.getElementById("sendBtn");
     const sendEnterBtn = document.getElementById("sendEnterBtn");
@@ -403,6 +409,7 @@ app.get("/", (_req, res) => {
     let selectedSessionName = "";
     let captureTimer = null;
     let lastCaptureRaw = "";
+    let textMeasureContext = null;
 
     function isCompactLayout() {
       return compactLayoutQuery.matches;
@@ -662,6 +669,46 @@ app.get("/", (_req, res) => {
       return html;
     }
 
+    function getTextMeasureContext() {
+      if (!textMeasureContext) {
+        textMeasureContext = document.createElement("canvas").getContext("2d");
+      }
+      return textMeasureContext;
+    }
+
+    function buildCanvasFont(style) {
+      return [
+        style.fontStyle,
+        style.fontVariant,
+        style.fontWeight,
+        style.fontSize,
+        style.fontFamily,
+      ].filter(Boolean).join(" ");
+    }
+
+    function getCaptureColumnCount() {
+      const style = window.getComputedStyle(captureEl);
+      const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const availableWidth = captureEl.clientWidth - horizontalPadding;
+
+      if (availableWidth <= 0) {
+        return null;
+      }
+
+      const context = getTextMeasureContext();
+      if (!context) {
+        return null;
+      }
+
+      context.font = buildCanvasFont(style);
+      const charWidth = context.measureText("0").width;
+      if (!(charWidth > 0)) {
+        return null;
+      }
+
+      return Math.max(20, Math.floor(availableWidth / charWidth));
+    }
+
     function renderPanes() {
       renderSessionOptions();
 
@@ -798,6 +845,35 @@ app.get("/", (_req, res) => {
       }
     }
 
+    async function fitPaneWidthToCapture() {
+      if (!selectedPaneId) {
+        setStatus("paneを選んでね", true);
+        return;
+      }
+
+      const columns = getCaptureColumnCount();
+      if (!columns) {
+        setStatus("表示幅を測れなかった", true);
+        return;
+      }
+
+      try {
+        setStatus("pane幅を調整中...");
+        await api("/api/resize-pane", {
+          method: "POST",
+          body: JSON.stringify({
+            paneId: selectedPaneId,
+            columns,
+          })
+        });
+        await loadCapture();
+        setStatus("pane幅を " + columns + " 桁に合わせたよ");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    fitWidthBtn.addEventListener("click", fitPaneWidthToCapture);
     refreshCaptureBtn.addEventListener("click", loadCapture);
     sessionSelectEl.addEventListener("change", async () => {
       selectedSessionName = sessionSelectEl.value;
@@ -939,6 +1015,28 @@ app.post("/api/send-key", async (req, res) => {
 
     await runTmux(["send-keys", "-t", paneId, key]);
     res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/resize-pane", async (req, res) => {
+  try {
+    const paneId = String(req.body?.paneId || "");
+    const columns = clampPaneWidth(Math.floor(Number(req.body?.columns)));
+
+    if (!isValidPaneId(paneId)) {
+      res.status(400).json({ error: "invalid paneId" });
+      return;
+    }
+
+    if (!Number.isFinite(columns)) {
+      res.status(400).json({ error: "invalid columns" });
+      return;
+    }
+
+    await runTmux(["resize-pane", "-t", paneId, "-x", String(columns)]);
+    res.json({ ok: true, columns });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
