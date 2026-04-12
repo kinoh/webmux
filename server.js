@@ -7,6 +7,10 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 5010;
 const ENTER_DELAY_MS = 10;
+const SPECIAL_KEYS = {
+  "C-c": "Ctrl+C",
+  Escape: "Esc",
+};
 
 app.use(express.json({ limit: "64kb" }));
 
@@ -143,7 +147,7 @@ app.get("/", (_req, res) => {
     }
     .inputbar {
       display: grid;
-      grid-template-columns: 1fr auto auto;
+      grid-template-columns: 1fr auto auto auto auto;
       gap: 8px;
       padding: 12px;
       border-top: 1px solid var(--border);
@@ -249,6 +253,8 @@ app.get("/", (_req, res) => {
       <input id="commandInput" type="text" placeholder="送信する文字列を入力" />
       <button id="sendBtn">送信</button>
       <button id="sendEnterBtn">Enterだけ</button>
+      <button id="sendCtrlCBtn">Ctrl+C</button>
+      <button id="sendEscBtn">Esc</button>
     </section>
   </main>
 
@@ -264,6 +270,8 @@ app.get("/", (_req, res) => {
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
     const sendBtn = document.getElementById("sendBtn");
     const sendEnterBtn = document.getElementById("sendEnterBtn");
+    const sendCtrlCBtn = document.getElementById("sendCtrlCBtn");
+    const sendEscBtn = document.getElementById("sendEscBtn");
 
     let panes = [];
     let selectedPaneId = null;
@@ -384,6 +392,27 @@ app.get("/", (_req, res) => {
       }
     }
 
+    async function sendSpecialKey(key, label) {
+      if (!selectedPaneId) {
+        setStatus("paneを選んでね", true);
+        return;
+      }
+
+      try {
+        await api("/api/send-key", {
+          method: "POST",
+          body: JSON.stringify({
+            paneId: selectedPaneId,
+            key
+          })
+        });
+        await loadCapture();
+        setStatus(label + " を送信したよ");
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
     refreshPanesBtn.addEventListener("click", loadPanes);
     refreshCaptureBtn.addEventListener("click", loadCapture);
     sendBtn.addEventListener("click", () => sendInput(false));
@@ -391,6 +420,8 @@ app.get("/", (_req, res) => {
       commandInputEl.value = "";
       await sendInput(true);
     });
+    sendCtrlCBtn.addEventListener("click", () => sendSpecialKey("C-c", "Ctrl+C"));
+    sendEscBtn.addEventListener("click", () => sendSpecialKey("Escape", "Esc"));
 
     commandInputEl.addEventListener("keydown", async (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
@@ -494,6 +525,28 @@ app.post("/api/send", async (req, res) => {
       }
       await runTmux(["send-keys", "-t", paneId, "Enter"]);
     }
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/send-key", async (req, res) => {
+  try {
+    const paneId = String(req.body?.paneId || "");
+    const key = String(req.body?.key || "");
+
+    if (!isValidPaneId(paneId)) {
+      res.status(400).json({ error: "invalid paneId" });
+      return;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(SPECIAL_KEYS, key)) {
+      res.status(400).json({ error: "invalid key" });
+      return;
+    }
+
+    await runTmux(["send-keys", "-t", paneId, key]);
     res.json({ ok: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
