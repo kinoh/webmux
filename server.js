@@ -348,7 +348,7 @@ app.get("/", (_req, res) => {
     <section class="inputbar">
       <textarea id="commandInput" placeholder="送信する文字列を入力"></textarea>
       <button id="sendBtn">送信</button>
-      <button id="sendEnterBtn">Enterだけ</button>
+      <button id="sendEnterBtn">Enter</button>
       <button id="sendCtrlCBtn">Ctrl+C</button>
       <button id="sendEscBtn">Esc</button>
     </section>
