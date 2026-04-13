@@ -10,6 +10,10 @@ const ENTER_DELAY_MS = 10;
 const SPECIAL_KEYS = {
   "C-c": "Ctrl+C",
   Escape: "Esc",
+  Up: "Up",
+  Down: "Down",
+  Left: "Left",
+  Right: "Right",
 };
 
 app.use(express.json({ limit: "64kb" }));
@@ -191,11 +195,20 @@ app.get("/", (_req, res) => {
     }
     .inputbar {
       display: grid;
-      grid-template-columns: 1fr auto auto auto auto;
+      grid-template-columns: 1fr;
       gap: 8px;
       padding: 12px;
       border-top: 1px solid var(--border);
       background: var(--panel);
+    }
+    .command-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .command-actions button {
+      min-width: 72px;
     }
     input[type="text"],
     select,
@@ -286,13 +299,15 @@ app.get("/", (_req, res) => {
         white-space: normal;
       }
       .inputbar {
+        grid-template-columns: 1fr;
+      }
+      .command-actions {
+        display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
       }
-      .inputbar textarea {
-        grid-column: 1 / -1;
-      }
-      .inputbar button {
+      .command-actions button {
         width: 100%;
+        min-width: 0;
       }
     }
     @media (max-width: 480px) {
@@ -355,10 +370,16 @@ app.get("/", (_req, res) => {
 
     <section class="inputbar">
       <textarea id="commandInput" placeholder="送信する文字列を入力"></textarea>
-      <button id="sendBtn">送信</button>
-      <button id="sendEnterBtn">Enter</button>
-      <button id="sendCtrlCBtn">Ctrl+C</button>
-      <button id="sendEscBtn">Esc</button>
+      <div class="command-actions">
+        <button id="sendBtn">送信</button>
+        <button id="sendEnterBtn">Enter</button>
+        <button id="sendUpBtn">Up</button>
+        <button id="sendDownBtn">Down</button>
+        <button id="sendLeftBtn">Left</button>
+        <button id="sendRightBtn">Right</button>
+        <button id="sendCtrlCBtn">Ctrl+C</button>
+        <button id="sendEscBtn">Esc</button>
+      </div>
     </section>
   </main>
 
@@ -375,6 +396,10 @@ app.get("/", (_req, res) => {
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
     const sendBtn = document.getElementById("sendBtn");
     const sendEnterBtn = document.getElementById("sendEnterBtn");
+    const sendUpBtn = document.getElementById("sendUpBtn");
+    const sendDownBtn = document.getElementById("sendDownBtn");
+    const sendLeftBtn = document.getElementById("sendLeftBtn");
+    const sendRightBtn = document.getElementById("sendRightBtn");
     const sendCtrlCBtn = document.getElementById("sendCtrlCBtn");
     const sendEscBtn = document.getElementById("sendEscBtn");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
@@ -888,6 +913,10 @@ app.get("/", (_req, res) => {
     });
     sendBtn.addEventListener("click", () => sendInput(false));
     sendEnterBtn.addEventListener("click", () => sendInput(true));
+    sendUpBtn.addEventListener("click", () => sendSpecialKey("Up", "Up"));
+    sendDownBtn.addEventListener("click", () => sendSpecialKey("Down", "Down"));
+    sendLeftBtn.addEventListener("click", () => sendSpecialKey("Left", "Left"));
+    sendRightBtn.addEventListener("click", () => sendSpecialKey("Right", "Right"));
     sendCtrlCBtn.addEventListener("click", () => sendSpecialKey("C-c", "Ctrl+C"));
     sendEscBtn.addEventListener("click", () => sendSpecialKey("Escape", "Esc"));
 
