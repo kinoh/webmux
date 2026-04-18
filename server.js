@@ -7,14 +7,44 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 5010;
 const ENTER_DELAY_MS = 10;
-const SPECIAL_KEYS = {
+const SPECIAL_KEY_LABELS = {
   "C-c": "Ctrl+C",
+  "C-d": "Ctrl+D",
+  "C-l": "Ctrl+L",
+  "C-z": "Ctrl+Z",
   Escape: "Esc",
   Up: "Up",
   Down: "Down",
   Left: "Left",
   Right: "Right",
+  Tab: "Tab",
+  BSpace: "Backspace",
+  DC: "Delete",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
 };
+const PRIMARY_SPECIAL_KEYS = [
+  "Tab",
+  "BSpace",
+  "DC",
+  "Up",
+  "Down",
+  "Left",
+  "Right",
+  "C-c",
+  "Escape",
+];
+const EXTRA_SPECIAL_KEYS = [
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "C-d",
+  "C-z",
+  "C-l",
+];
 
 app.use(express.json({ limit: "64kb" }));
 
@@ -33,6 +63,14 @@ function runTmux(args) {
 
 function isValidPaneId(paneId) {
   return typeof paneId === "string" && /^%[0-9]+$/.test(paneId);
+}
+
+function isValidTmuxKeyName(key) {
+  return typeof key === "string" && /^[!-~]{1,64}$/.test(key);
+}
+
+function getSpecialKeyLabel(key) {
+  return SPECIAL_KEY_LABELS[key] || key;
 }
 
 function sleep(ms) {
@@ -210,6 +248,52 @@ app.get("/", (_req, res) => {
     .command-actions button {
       min-width: 72px;
     }
+    .special-key-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .special-key-popover-wrap {
+      position: relative;
+    }
+    .special-key-popover {
+      position: absolute;
+      right: 0;
+      bottom: calc(100% + 8px);
+      width: min(360px, calc(100vw - 24px));
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--panel);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+      display: grid;
+      gap: 10px;
+      z-index: 20;
+    }
+    .special-key-popover[hidden] {
+      display: none;
+    }
+    .special-key-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+    .special-key-grid button {
+      width: 100%;
+      min-width: 0;
+    }
+    .special-key-custom {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
+      align-items: center;
+    }
+    .special-key-hint {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+    }
     input[type="text"],
     select,
     textarea {
@@ -309,6 +393,14 @@ app.get("/", (_req, res) => {
         width: 100%;
         min-width: 0;
       }
+      .special-key-row {
+        display: contents;
+      }
+      .special-key-popover {
+        left: 0;
+        right: auto;
+        width: 100%;
+      }
     }
     @media (max-width: 480px) {
       .header,
@@ -373,12 +465,18 @@ app.get("/", (_req, res) => {
       <div class="command-actions">
         <button id="sendBtn">送信</button>
         <button id="sendEnterBtn">Enter</button>
-        <button id="sendUpBtn">Up</button>
-        <button id="sendDownBtn">Down</button>
-        <button id="sendLeftBtn">Left</button>
-        <button id="sendRightBtn">Right</button>
-        <button id="sendCtrlCBtn">Ctrl+C</button>
-        <button id="sendEscBtn">Esc</button>
+        <div id="primarySpecialKeys" class="special-key-row"></div>
+        <div class="special-key-popover-wrap">
+          <button id="toggleSpecialKeysBtn" type="button" aria-expanded="false" aria-controls="specialKeyPopover">More</button>
+          <div id="specialKeyPopover" class="special-key-popover" hidden>
+            <div id="extraSpecialKeys" class="special-key-grid"></div>
+            <form id="customSpecialKeyForm" class="special-key-custom">
+              <input id="customSpecialKeyInput" type="text" placeholder="tmux key name" spellcheck="false" />
+              <button type="submit">Send key</button>
+            </form>
+            <p class="special-key-hint">Use tmux key notation like F1, M-Left, C-b, NPage.</p>
+          </div>
+        </div>
       </div>
     </section>
   </main>
@@ -396,13 +494,16 @@ app.get("/", (_req, res) => {
     const refreshCaptureBtn = document.getElementById("refreshCaptureBtn");
     const sendBtn = document.getElementById("sendBtn");
     const sendEnterBtn = document.getElementById("sendEnterBtn");
-    const sendUpBtn = document.getElementById("sendUpBtn");
-    const sendDownBtn = document.getElementById("sendDownBtn");
-    const sendLeftBtn = document.getElementById("sendLeftBtn");
-    const sendRightBtn = document.getElementById("sendRightBtn");
-    const sendCtrlCBtn = document.getElementById("sendCtrlCBtn");
-    const sendEscBtn = document.getElementById("sendEscBtn");
+    const primarySpecialKeysEl = document.getElementById("primarySpecialKeys");
+    const toggleSpecialKeysBtn = document.getElementById("toggleSpecialKeysBtn");
+    const specialKeyPopoverEl = document.getElementById("specialKeyPopover");
+    const extraSpecialKeysEl = document.getElementById("extraSpecialKeys");
+    const customSpecialKeyFormEl = document.getElementById("customSpecialKeyForm");
+    const customSpecialKeyInputEl = document.getElementById("customSpecialKeyInput");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
+    const primarySpecialKeys = ${JSON.stringify(PRIMARY_SPECIAL_KEYS)};
+    const extraSpecialKeys = ${JSON.stringify(EXTRA_SPECIAL_KEYS)};
+    const specialKeyLabels = ${JSON.stringify(SPECIAL_KEY_LABELS)};
     const ANSI_ESCAPE = String.fromCharCode(27);
     const ANSI_BELL = String.fromCharCode(7);
     const ANSI_SGR_PATTERN = new RegExp(ANSI_ESCAPE + "\\\\[([0-9;]*)m", "g");
@@ -479,6 +580,27 @@ app.get("/", (_req, res) => {
     function setStatus(message, isError = false) {
       statusEl.textContent = message;
       statusEl.className = "status" + (isError ? " error" : "");
+    }
+
+    function getSpecialKeyLabel(key) {
+      return specialKeyLabels[key] || key;
+    }
+
+    function setSpecialKeyPopoverOpen(isOpen) {
+      specialKeyPopoverEl.hidden = !isOpen;
+      toggleSpecialKeysBtn.setAttribute("aria-expanded", String(isOpen));
+    }
+
+    function renderSpecialKeyButtons(container, keys) {
+      container.innerHTML = keys.map((key) => (
+        \`<button type="button" data-special-key="\${escapeHtml(key)}">\${escapeHtml(getSpecialKeyLabel(key))}</button>\`
+      )).join("");
+
+      for (const buttonEl of container.querySelectorAll("[data-special-key]")) {
+        buttonEl.addEventListener("click", async () => {
+          await sendSpecialKey(buttonEl.dataset.specialKey, getSpecialKeyLabel(buttonEl.dataset.specialKey));
+        });
+      }
     }
 
     function escapeHtml(text) {
@@ -863,6 +985,8 @@ app.get("/", (_req, res) => {
             key
           })
         });
+        customSpecialKeyInputEl.value = "";
+        setSpecialKeyPopoverOpen(false);
         await loadCapture();
         setStatus(label + " を送信したよ");
       } catch (error) {
@@ -913,12 +1037,33 @@ app.get("/", (_req, res) => {
     });
     sendBtn.addEventListener("click", () => sendInput(false));
     sendEnterBtn.addEventListener("click", () => sendInput(true));
-    sendUpBtn.addEventListener("click", () => sendSpecialKey("Up", "Up"));
-    sendDownBtn.addEventListener("click", () => sendSpecialKey("Down", "Down"));
-    sendLeftBtn.addEventListener("click", () => sendSpecialKey("Left", "Left"));
-    sendRightBtn.addEventListener("click", () => sendSpecialKey("Right", "Right"));
-    sendCtrlCBtn.addEventListener("click", () => sendSpecialKey("C-c", "Ctrl+C"));
-    sendEscBtn.addEventListener("click", () => sendSpecialKey("Escape", "Esc"));
+    renderSpecialKeyButtons(primarySpecialKeysEl, primarySpecialKeys);
+    renderSpecialKeyButtons(extraSpecialKeysEl, extraSpecialKeys);
+    toggleSpecialKeysBtn.addEventListener("click", () => {
+      setSpecialKeyPopoverOpen(specialKeyPopoverEl.hidden);
+      if (!specialKeyPopoverEl.hidden) {
+        customSpecialKeyInputEl.focus();
+      }
+    });
+    customSpecialKeyFormEl.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const key = customSpecialKeyInputEl.value.trim();
+      if (!key) {
+        setStatus("tmux key name を入れてね", true);
+        return;
+      }
+      await sendSpecialKey(key, key);
+    });
+    document.addEventListener("click", (event) => {
+      if (!specialKeyPopoverEl.hidden && !event.target.closest(".special-key-popover-wrap")) {
+        setSpecialKeyPopoverOpen(false);
+      }
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !specialKeyPopoverEl.hidden) {
+        setSpecialKeyPopoverOpen(false);
+      }
+    });
 
     linesInputEl.addEventListener("change", loadCapture);
     const handleLayoutChange = () => {
@@ -1037,13 +1182,13 @@ app.post("/api/send-key", async (req, res) => {
       return;
     }
 
-    if (!Object.prototype.hasOwnProperty.call(SPECIAL_KEYS, key)) {
+    if (!isValidTmuxKeyName(key)) {
       res.status(400).json({ error: "invalid key" });
       return;
     }
 
     await runTmux(["send-keys", "-t", paneId, key]);
-    res.json({ ok: true });
+    res.json({ ok: true, label: getSpecialKeyLabel(key) });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
