@@ -396,10 +396,16 @@ app.get("/", (_req, res) => {
       .special-key-row {
         display: contents;
       }
+      .special-key-popover-wrap {
+        grid-column: 1 / -1;
+        display: flex;
+        justify-content: flex-end;
+      }
       .special-key-popover {
         left: 0;
-        right: auto;
-        width: 100%;
+        right: 0;
+        width: auto;
+        max-width: none;
       }
     }
     @media (max-width: 480px) {
