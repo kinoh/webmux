@@ -385,7 +385,6 @@ async function loadConfig() {
 }
 async function loadPanes() {
     try {
-        setStatus("Loading pane list...");
         const data = await api("/api/panes");
         panes = data.panes;
         if (!selectedPaneKey || !panes.some((pane) => pane.paneKey === selectedPaneKey)) {
