@@ -45,6 +45,15 @@ const MOBILE_PRIMARY_SPECIAL_KEYS = [
   "Down",
   "Right",
 ];
+const MOBILE_ACTION_ORDER = {
+  "C-c": 2,
+  Up: 3,
+  Tab: 4,
+  BSpace: 5,
+  Left: 7,
+  Down: 8,
+  Right: 9,
+};
 const EXTRA_SPECIAL_KEYS = [
   "DC",
   "Home",
@@ -404,11 +413,18 @@ app.get("/", (_req, res) => {
         width: 100%;
         min-width: 0;
       }
+      #sendBtn {
+        order: 1;
+      }
+      #sendEnterBtn {
+        order: 6;
+      }
       .special-key-row {
         display: contents;
       }
       .special-key-popover-wrap {
         position: static;
+        order: 10;
       }
       .special-key-popover {
         left: 0;
@@ -518,6 +534,7 @@ app.get("/", (_req, res) => {
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
     const primarySpecialKeys = ${JSON.stringify(PRIMARY_SPECIAL_KEYS)};
     const mobilePrimarySpecialKeys = ${JSON.stringify(MOBILE_PRIMARY_SPECIAL_KEYS)};
+    const mobileActionOrder = ${JSON.stringify(MOBILE_ACTION_ORDER)};
     const extraSpecialKeys = ${JSON.stringify(EXTRA_SPECIAL_KEYS)};
     const specialKeyLabels = ${JSON.stringify(SPECIAL_KEY_LABELS)};
     const ANSI_ESCAPE = String.fromCharCode(27);
@@ -613,6 +630,11 @@ app.get("/", (_req, res) => {
       )).join("");
 
       for (const buttonEl of container.querySelectorAll("[data-special-key]")) {
+        if (isCompactLayout() && mobileActionOrder[buttonEl.dataset.specialKey]) {
+          buttonEl.style.order = String(mobileActionOrder[buttonEl.dataset.specialKey]);
+        } else {
+          buttonEl.style.removeProperty("order");
+        }
         buttonEl.addEventListener("click", async () => {
           await sendSpecialKey(buttonEl.dataset.specialKey, getSpecialKeyLabel(buttonEl.dataset.specialKey));
         });
