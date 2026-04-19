@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "None",
+    "lib": ["DOM", "ES2022"],
+    "strict": true,
+    "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
+    "rootDir": "src/client",
+    "outFile": "public/app.js"
+  },
+  "include": [
+    "src/client/app.ts"
+  ]
+}

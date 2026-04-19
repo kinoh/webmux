@@ -5,8 +5,9 @@
   "description": "Minimal web UI for tmux panes",
   "main": "server.ts",
   "scripts": {
-    "start": "tsx server.ts",
-    "typecheck": "tsc --noEmit"
+    "build:client": "tsc --project tsconfig.client.json",
+    "start": "npm run build:client && tsx server.ts",
+    "typecheck": "tsc --noEmit && tsc --project tsconfig.client.json --noEmit"
   },
   "dependencies": {
     "express": "^5.1.0"

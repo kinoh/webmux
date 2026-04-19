@@ -14,3 +14,5 @@
   This kept the first TypeScript pass focused on backend routing and HTTP boundaries, instead of mixing type errors with a single oversized file that still carried unrelated responsibilities.
 - Replaced server-side HTML/JS string embedding with static files in `public/` and an `/api/config` bootstrap endpoint.
   This makes the browser runtime observable and editable as normal files, which is a better foundation for a later client-side TypeScript pass than keeping UI behavior hidden inside a server template string.
+- Added `src/client/app.ts` as the typed source of truth and compiled it into `public/app.js` during startup.
+  This keeps the deployed browser asset simple while moving UI behavior under type-checking, which is the minimum useful step before deciding whether a dedicated frontend bundler is worth the extra dependency.
