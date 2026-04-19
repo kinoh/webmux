@@ -1,7 +1,8 @@
-const { createTmuxBackend } = require("./tmux");
-const { createZellijBackend } = require("./zellij");
+import { createTmuxBackend } from "./tmux";
+import { createZellijBackend } from "./zellij";
+import type { BackendId, BackendClientConfig, MuxBackend, NormalizedPaneInfo, PaneInfo } from "./types";
 
-function createMuxBackend(backendId, runCommand) {
+function createMuxBackend(backendId: BackendId, runCommand: (command: string, args: string[]) => Promise<string>): MuxBackend {
   if (backendId === "tmux") {
     return createTmuxBackend(runCommand);
   }
@@ -11,7 +12,7 @@ function createMuxBackend(backendId, runCommand) {
   throw new Error(`unsupported MUX backend: ${backendId}`);
 }
 
-function createMuxRegistry(runCommand) {
+export function createMuxRegistry(runCommand: (command: string, args: string[]) => Promise<string>) {
   const backends = [
     createMuxBackend("tmux", runCommand),
     createMuxBackend("zellij", runCommand),
@@ -19,7 +20,7 @@ function createMuxRegistry(runCommand) {
 
   return {
     backends,
-    clientBackendConfigs: backends.map((backend) => ({
+    clientBackendConfigs: backends.map((backend): BackendClientConfig => ({
       id: backend.id,
       displayName: backend.displayName,
       supportsResize: backend.supportsResize,
@@ -30,10 +31,10 @@ function createMuxRegistry(runCommand) {
       customKeyPlaceholder: backend.customKeyPlaceholder,
       specialKeyHint: backend.specialKeyHint,
     })),
-    getBackendById(backendId) {
+    getBackendById(backendId: string): MuxBackend | null {
       return backends.find((backend) => backend.id === backendId) || null;
     },
-    normalizePane(backend, pane) {
+    normalizePane(backend: MuxBackend, pane: PaneInfo): NormalizedPaneInfo {
       return {
         ...pane,
         backendId: backend.id,
@@ -42,10 +43,10 @@ function createMuxRegistry(runCommand) {
         paneKey: [backend.id, pane.sessionName, pane.paneId].join(":"),
       };
     },
-    async listAllPanes() {
+    async listAllPanes(): Promise<{ panes: NormalizedPaneInfo[]; errors: string[] }> {
       const results = await Promise.allSettled(backends.map((backend) => backend.listPanes()));
-      const panes = [];
-      const errors = [];
+      const panes: NormalizedPaneInfo[] = [];
+      const errors: string[] = [];
 
       for (let index = 0; index < results.length; index += 1) {
         const backend = backends[index];
@@ -61,7 +62,3 @@ function createMuxRegistry(runCommand) {
     },
   };
 }
-
-module.exports = {
-  createMuxRegistry,
-};

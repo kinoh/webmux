@@ -1,33 +1,37 @@
-const express = require("express");
+import express, { type Request, type Response } from "express";
 
-const { runCommand } = require("./command");
-const { createMuxRegistry } = require("../mux/registry");
-const { renderIndex } = require("../web/renderIndex");
+import { createMuxRegistry } from "../mux/registry";
+import { renderIndex } from "../web/renderIndex";
+import { runCommand } from "./command";
 
-function clampPaneWidth(columns) {
+function clampPaneWidth(columns: number): number {
   return Math.max(20, Math.min(2000, columns));
 }
 
-function createApp() {
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function createApp() {
   const app = express();
   const registry = createMuxRegistry(runCommand);
 
   app.use(express.json({ limit: "64kb" }));
 
-  app.get("/", (_req, res) => {
+  app.get("/", (_req: Request, res: Response) => {
     res.type("html").send(renderIndex({ clientBackendConfigs: registry.clientBackendConfigs }));
   });
 
-  app.get("/api/panes", async (_req, res) => {
+  app.get("/api/panes", async (_req: Request, res: Response) => {
     try {
       const { panes, errors } = await registry.listAllPanes();
       res.json({ panes, errors });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: errorMessage(error) });
     }
   });
 
-  app.get("/api/capture", async (req, res) => {
+  app.get("/api/capture", async (req: Request, res: Response) => {
     try {
       const backendId = String(req.query.backendId || "");
       const paneId = String(req.query.paneId || "");
@@ -47,11 +51,11 @@ function createApp() {
 
       res.json({ content: await backend.capturePane(paneId, lines, sessionName) });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: errorMessage(error) });
     }
   });
 
-  app.post("/api/send", async (req, res) => {
+  app.post("/api/send", async (req: Request, res: Response) => {
     try {
       const backendId = String(req.body?.backendId || "");
       const paneId = String(req.body?.paneId || "");
@@ -80,11 +84,11 @@ function createApp() {
 
       res.json({ ok: true });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: errorMessage(error) });
     }
   });
 
-  app.post("/api/send-key", async (req, res) => {
+  app.post("/api/send-key", async (req: Request, res: Response) => {
     try {
       const backendId = String(req.body?.backendId || "");
       const paneId = String(req.body?.paneId || "");
@@ -110,11 +114,11 @@ function createApp() {
       await backend.sendKeyToPane(paneId, key, sessionName);
       res.json({ ok: true, label: backend.specialKeyLabels[key] || key });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: errorMessage(error) });
     }
   });
 
-  app.post("/api/resize-pane", async (req, res) => {
+  app.post("/api/resize-pane", async (req: Request, res: Response) => {
     try {
       const backendId = String(req.body?.backendId || "");
       const paneId = String(req.body?.paneId || "");
@@ -145,13 +149,9 @@ function createApp() {
       await backend.resizePane(paneId, columns, sessionName);
       res.json({ ok: true, columns });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      res.status(500).json({ error: errorMessage(error) });
     }
   });
 
   return app;
 }
-
-module.exports = {
-  createApp,
-};

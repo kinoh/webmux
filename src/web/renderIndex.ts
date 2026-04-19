@@ -1,3 +1,5 @@
+import type { BackendClientConfig } from "../mux/types";
+
 const MOBILE_ACTION_ORDER = {
   "C-c": 2,
   "Ctrl c": 2,
@@ -10,7 +12,7 @@ const MOBILE_ACTION_ORDER = {
   Right: 9,
 };
 
-function renderIndex({ clientBackendConfigs }) {
+export function renderIndex({ clientBackendConfigs }: { clientBackendConfigs: BackendClientConfig[] }): string {
   return `<!doctype html>
 <html lang="ja">
 <head>
@@ -215,8 +217,3 @@ function renderIndex({ clientBackendConfigs }) {
 </body>
 </html>`;
 }
-
-module.exports = {
-  renderIndex,
-  MOBILE_ACTION_ORDER,
-};

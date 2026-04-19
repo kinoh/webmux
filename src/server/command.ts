@@ -1,6 +1,6 @@
-const { execFile } = require("child_process");
+import { execFile } from "child_process";
 
-function runCommand(command, args) {
+export function runCommand(command: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(command, args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
@@ -12,7 +12,3 @@ function runCommand(command, args) {
     });
   });
 }
-
-module.exports = {
-  runCommand,
-};

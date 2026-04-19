@@ -10,3 +10,5 @@
   This follows the current programmatic control guidance and avoids reimplementing multiline input behavior that Zellij already handles.
 - Replaced backend process-wide switching with per-pane backend routing.
   The UI needs to list and operate on tmux and Zellij panes at the same time, so selecting a single active backend in process state was the wrong dependency direction.
+- Split the server runtime into mux, server, and web modules before converting it to TypeScript.
+  This kept the first TypeScript pass focused on backend routing and HTTP boundaries, instead of mixing type errors with a single oversized file that still carried unrelated responsibilities.

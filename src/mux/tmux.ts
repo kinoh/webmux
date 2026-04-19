@@ -1,3 +1,5 @@
+import type { BackendClientConfig, MuxBackend, PaneInfo } from "./types";
+
 const ENTER_DELAY_MS = 10;
 
 const TMUX_SPECIAL_KEY_LABELS = {
@@ -22,12 +24,12 @@ const TMUX_PRIMARY_SPECIAL_KEYS = ["Tab", "BSpace", "DC", "Up", "Down", "Left", 
 const TMUX_MOBILE_PRIMARY_SPECIAL_KEYS = ["C-c", "Up", "Tab", "BSpace", "Left", "Down", "Right"];
 const TMUX_EXTRA_SPECIAL_KEYS = ["DC", "Escape", "Home", "End", "PageUp", "PageDown", "C-d", "C-z", "C-l"];
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function createTmuxBackend(runCommand) {
-  const config = {
+export function createTmuxBackend(runCommand: (command: string, args: string[]) => Promise<string>): MuxBackend {
+  const config: BackendClientConfig & { command: string } = {
     id: "tmux",
     command: "tmux",
     displayName: "tmux",
@@ -40,11 +42,11 @@ function createTmuxBackend(runCommand) {
     specialKeyHint: "Use tmux key notation like F1, M-Left, C-b, NPage.",
   };
 
-  function run(args) {
+  function run(args: string[]) {
     return runCommand(config.command, args);
   }
 
-  async function sendEnterKey(paneId, shouldDelayBefore = false) {
+  async function sendEnterKey(paneId: string, shouldDelayBefore = false) {
     if (shouldDelayBefore) {
       await sleep(ENTER_DELAY_MS);
     }
@@ -53,13 +55,13 @@ function createTmuxBackend(runCommand) {
 
   return {
     ...config,
-    isValidPaneId(paneId) {
+    isValidPaneId(paneId: string) {
       return typeof paneId === "string" && /^%[0-9]+$/.test(paneId);
     },
-    isValidKeyName(key) {
+    isValidKeyName(key: string) {
       return typeof key === "string" && /^[!-~]{1,64}$/.test(key);
     },
-    async listPanes() {
+    async listPanes(): Promise<PaneInfo[]> {
       const format = [
         "#{session_name}",
         "#{window_index}",
@@ -74,7 +76,7 @@ function createTmuxBackend(runCommand) {
       return stdout
         .split("\n")
         .filter(Boolean)
-        .map((line) => {
+        .map((line): PaneInfo => {
           const [sessionName, windowIndex, paneIndex, paneId, title, currentCommand] = line.split("\t");
           return {
             sessionName,
@@ -87,10 +89,10 @@ function createTmuxBackend(runCommand) {
           };
         });
     },
-    async capturePane(paneId, lines) {
+    async capturePane(paneId: string, lines: number) {
       return run(["capture-pane", "-t", paneId, "-e", "-p", "-S", `-${lines}`]);
     },
-    async sendTextToPane(paneId, text) {
+    async sendTextToPane(paneId: string, text: string) {
       const normalizedText = text.replace(/\r\n?/g, "\n");
       const splitLines = normalizedText.split("\n");
 
@@ -107,19 +109,15 @@ function createTmuxBackend(runCommand) {
         }
       }
     },
-    async sendEnterKey(paneId, shouldDelayBefore = false) {
+    async sendEnterKey(paneId: string, shouldDelayBefore = false) {
       await sendEnterKey(paneId, shouldDelayBefore);
     },
-    async sendKeyToPane(paneId, key) {
+    async sendKeyToPane(paneId: string, key: string) {
       await run(["send-keys", "-t", paneId, key]);
     },
-    async resizePane(paneId, columns) {
+    async resizePane(paneId: string, columns: number) {
       await run(["resize-pane", "-t", paneId, "-x", String(columns)]);
       return columns;
     },
   };
 }
-
-module.exports = {
-  createTmuxBackend,
-};
