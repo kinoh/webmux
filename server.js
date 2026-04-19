@@ -400,6 +400,13 @@ app.get("/", (_req, res) => {
         grid-column: 1 / -1;
         display: flex;
         justify-content: flex-end;
+        align-items: center;
+      }
+      #toggleSpecialKeysBtn {
+        min-width: 0;
+        padding: 8px 10px;
+        font-size: 12px;
+        line-height: 1;
       }
       .special-key-popover {
         left: 0;
