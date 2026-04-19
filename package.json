@@ -2,7 +2,7 @@
   "name": "webmux",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal web UI for tmux panes",
+  "description": "Minimal web UI for local tmux and zellij panes",
   "main": "server.ts",
   "scripts": {
     "build:client": "tsc --project tsconfig.client.json",
