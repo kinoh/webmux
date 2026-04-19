@@ -407,26 +407,26 @@ async function loadPanes() {
         setStatus(error instanceof Error ? error.message : String(error), true);
     }
 }
-async function loadCapture() {
+async function loadCapture(options = {}) {
     if (!selectedPaneKey)
         return;
+    const { showLoadingStatus = false } = options;
     try {
         const lines = Math.max(1, Math.min(5000, Number(linesInputEl.value) || 300));
         const pane = getSelectedPane();
         selectedTitleEl.textContent = pane
             ? `[${pane.backendDisplayName}] ${pane.label} ${pane.paneId} / ${pane.title || "(no title)"}`
             : selectedPaneKey;
-        setStatus("Loading capture...");
+        if (showLoadingStatus) {
+            setStatus("Loading capture...");
+        }
         const backendQuery = pane?.backendId ? `&backendId=${encodeURIComponent(pane.backendId)}` : "";
         const sessionQuery = pane?.sessionName ? `&sessionName=${encodeURIComponent(pane.sessionName)}` : "";
         const data = await api(`/api/capture?paneId=${encodeURIComponent(pane?.paneId || "")}&lines=${lines}${backendQuery}${sessionQuery}`);
         if (lastCaptureRaw !== data.content) {
             captureEl.innerHTML = renderAnsiToHtml(data.content);
             lastCaptureRaw = data.content;
-            setStatus("Capture updated");
-            return;
         }
-        setStatus("Capture unchanged");
     }
     catch (error) {
         setStatus(error instanceof Error ? error.message : String(error), true);
@@ -513,7 +513,7 @@ async function fitPaneWidthToCapture() {
     }
 }
 refreshCaptureBtn.addEventListener("click", () => {
-    void loadCapture();
+    void loadCapture({ showLoadingStatus: true });
 });
 fitWidthBtn.addEventListener("click", () => {
     void fitPaneWidthToCapture();
@@ -562,7 +562,7 @@ document.addEventListener("keydown", (event) => {
     }
 });
 linesInputEl.addEventListener("change", () => {
-    void loadCapture();
+    void loadCapture({ showLoadingStatus: true });
 });
 const handleLayoutChange = () => {
     renderPanes();
