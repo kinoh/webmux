@@ -416,7 +416,61 @@ function createMuxBackend(backendId) {
   throw new Error(`unsupported MUX_BACKEND: ${backendId}`);
 }
 
-const muxBackend = createMuxBackend(process.env.MUX_BACKEND || "tmux");
+const backends = [
+  createMuxBackend("tmux"),
+  createMuxBackend("zellij"),
+];
+const clientBackendConfigs = backends.map((backend) => ({
+  id: backend.id,
+  displayName: backend.displayName,
+  supportsResize: backend.supportsResize,
+  primarySpecialKeys: backend.primarySpecialKeys,
+  mobilePrimarySpecialKeys: backend.mobilePrimarySpecialKeys,
+  extraSpecialKeys: backend.extraSpecialKeys,
+  specialKeyLabels: backend.specialKeyLabels,
+  customKeyPlaceholder: backend.customKeyPlaceholder,
+  specialKeyHint: backend.specialKeyHint,
+}));
+
+function getBackendById(backendId) {
+  return backends.find((backend) => backend.id === backendId) || null;
+}
+
+function createPaneKey(pane) {
+  return [pane.backendId, pane.sessionName, pane.paneId].join(":");
+}
+
+function normalizePane(backend, pane) {
+  return {
+    ...pane,
+    backendId: backend.id,
+    backendDisplayName: backend.displayName,
+    supportsResize: backend.supportsResize,
+    paneKey: createPaneKey({
+      backendId: backend.id,
+      sessionName: pane.sessionName,
+      paneId: pane.paneId,
+    }),
+  };
+}
+
+async function listAllPanes() {
+  const results = await Promise.allSettled(backends.map((backend) => backend.listPanes()));
+  const panes = [];
+  const errors = [];
+
+  for (let index = 0; index < results.length; index += 1) {
+    const backend = backends[index];
+    const result = results[index];
+    if (result.status === "fulfilled") {
+      panes.push(...result.value.map((pane) => normalizePane(backend, pane)));
+      continue;
+    }
+    errors.push(`${backend.displayName}: ${result.reason?.message || "failed to list panes"}`);
+  }
+
+  return { panes, errors };
+}
 
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
@@ -424,7 +478,7 @@ app.get("/", (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>${muxBackend.displayName} mini web UI</title>
+  <title>webmux</title>
   <style>
     :root {
       color-scheme: dark;
@@ -756,7 +810,7 @@ app.get("/", (_req, res) => {
 <body>
   <aside class="sidebar">
     <div class="header">
-      <div class="title">${muxBackend.displayName} panes</div>
+      <div class="title">multiplexer panes</div>
       <div class="toolbar">
         <label class="session-picker">
           <span>session</span>
@@ -772,11 +826,11 @@ app.get("/", (_req, res) => {
       <div class="header">
         <div id="selectedTitle" class="title">paneを選んでね</div>
         <div class="toolbar">
-          <label id="linesControl" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;"${muxBackend.id === "zellij" ? " hidden" : ""}>
+          <label id="linesControl" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;">
             行数
             <input id="linesInput" type="text" value="300" style="width:72px;" />
           </label>
-          <button id="fitWidthBtn"${muxBackend.supportsResize ? "" : " hidden"}>幅合わせ</button>
+          <button id="fitWidthBtn">幅合わせ</button>
           <button id="refreshCaptureBtn">再読込</button>
         </div>
       </div>
@@ -795,10 +849,10 @@ app.get("/", (_req, res) => {
           <div id="specialKeyPopover" class="special-key-popover" hidden>
             <div id="extraSpecialKeys" class="special-key-grid"></div>
             <form id="customSpecialKeyForm" class="special-key-custom">
-              <input id="customSpecialKeyInput" type="text" placeholder="${muxBackend.customKeyPlaceholder}" spellcheck="false" />
+              <input id="customSpecialKeyInput" type="text" placeholder="key name" spellcheck="false" />
               <button type="submit">Send key</button>
             </form>
-            <p class="special-key-hint">${muxBackend.specialKeyHint}</p>
+            <p id="specialKeyHint" class="special-key-hint"></p>
           </div>
         </div>
       </div>
@@ -824,17 +878,11 @@ app.get("/", (_req, res) => {
     const extraSpecialKeysEl = document.getElementById("extraSpecialKeys");
     const customSpecialKeyFormEl = document.getElementById("customSpecialKeyForm");
     const customSpecialKeyInputEl = document.getElementById("customSpecialKeyInput");
+    const specialKeyHintEl = document.getElementById("specialKeyHint");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
-    const backend = ${JSON.stringify({
-      id: muxBackend.id,
-      displayName: muxBackend.displayName,
-      supportsResize: muxBackend.supportsResize,
-    })};
-    const primarySpecialKeys = ${JSON.stringify(muxBackend.primarySpecialKeys)};
-    const mobilePrimarySpecialKeys = ${JSON.stringify(muxBackend.mobilePrimarySpecialKeys)};
+    const backendConfigs = ${JSON.stringify(clientBackendConfigs)};
+    const backendConfigById = Object.fromEntries(backendConfigs.map((config) => [config.id, config]));
     const mobileActionOrder = ${JSON.stringify(MOBILE_ACTION_ORDER)};
-    const extraSpecialKeys = ${JSON.stringify(muxBackend.extraSpecialKeys)};
-    const specialKeyLabels = ${JSON.stringify(muxBackend.specialKeyLabels)};
     const ANSI_ESCAPE = String.fromCharCode(27);
     const ANSI_BELL = String.fromCharCode(7);
     const ANSI_SGR_PATTERN = new RegExp(ANSI_ESCAPE + "\\\\[([0-9;]*)m", "g");
@@ -862,8 +910,8 @@ app.get("/", (_req, res) => {
     ];
 
     let panes = [];
-    let selectedPaneId = null;
-    let selectedSessionName = "";
+    let selectedPaneKey = null;
+    let selectedSessionKey = "";
     let captureTimer = null;
     let lastCaptureRaw = "";
     let textMeasureContext = null;
@@ -872,40 +920,59 @@ app.get("/", (_req, res) => {
       return compactLayoutQuery.matches;
     }
 
-    function getSessionNames() {
-      return [...new Set(panes.map((pane) => pane.sessionName))];
+    function getSessionKeys() {
+      return [...new Set(panes.map((pane) => pane.backendId + ":" + pane.sessionName))];
+    }
+
+    function getSessionLabel(sessionKey) {
+      const [backendId, ...sessionParts] = sessionKey.split(":");
+      const sessionName = sessionParts.join(":");
+      const backendConfig = backendConfigById[backendId];
+      return backendConfig ? (backendConfig.displayName + ":" + sessionName) : sessionKey;
+    }
+
+    function getSelectedPane() {
+      return panes.find((pane) => pane.paneKey === selectedPaneKey) || null;
+    }
+
+    function getSelectedBackendConfig() {
+      const pane = getSelectedPane();
+      if (!pane) {
+        return backendConfigs[0];
+      }
+      return backendConfigById[pane.backendId] || backendConfigs[0];
     }
 
     function syncSelectedSession() {
-      const pane = panes.find((item) => item.paneId === selectedPaneId);
-      const sessionNames = getSessionNames();
+      const pane = getSelectedPane();
+      const sessionKeys = getSessionKeys();
 
       if (pane) {
-        selectedSessionName = pane.sessionName;
+        selectedSessionKey = pane.backendId + ":" + pane.sessionName;
         return;
       }
 
-      if (sessionNames.includes(selectedSessionName)) {
+      if (sessionKeys.includes(selectedSessionKey)) {
         return;
       }
 
-      selectedSessionName = sessionNames[0] || "";
+      selectedSessionKey = sessionKeys[0] || "";
     }
 
     function renderSessionOptions() {
-      const sessionNames = getSessionNames();
+      const sessionKeys = getSessionKeys();
       syncSelectedSession();
-      sessionSelectEl.innerHTML = sessionNames.map((sessionName) => (
-        \`<option value="\${escapeHtml(sessionName)}">\${escapeHtml(sessionName)}</option>\`
+      sessionSelectEl.innerHTML = sessionKeys.map((sessionKey) => (
+        \`<option value="\${escapeHtml(sessionKey)}">\${escapeHtml(getSessionLabel(sessionKey))}</option>\`
       )).join("");
-      sessionSelectEl.value = selectedSessionName;
+      sessionSelectEl.value = selectedSessionKey;
     }
 
     function getVisiblePanes() {
       if (!isCompactLayout()) {
         return panes;
       }
-      return panes.filter((pane) => pane.sessionName === selectedSessionName);
+      return panes.filter((pane) => (pane.backendId + ":" + pane.sessionName) === selectedSessionKey);
     }
 
     function setStatus(message, isError = false) {
@@ -914,7 +981,8 @@ app.get("/", (_req, res) => {
     }
 
     function getSpecialKeyLabel(key) {
-      return specialKeyLabels[key] || key;
+      const backendConfig = getSelectedBackendConfig();
+      return backendConfig.specialKeyLabels[key] || key;
     }
 
     function setSpecialKeyPopoverOpen(isOpen) {
@@ -940,8 +1008,15 @@ app.get("/", (_req, res) => {
     }
 
     function renderActionButtons() {
-      const keys = isCompactLayout() ? mobilePrimarySpecialKeys : primarySpecialKeys;
+      const backendConfig = getSelectedBackendConfig();
+      const keys = isCompactLayout() ? backendConfig.mobilePrimarySpecialKeys : backendConfig.primarySpecialKeys;
       renderSpecialKeyButtons(primarySpecialKeysEl, keys);
+      renderSpecialKeyButtons(extraSpecialKeysEl, backendConfig.extraSpecialKeys);
+      customSpecialKeyInputEl.placeholder = backendConfig.customKeyPlaceholder;
+      specialKeyHintEl.textContent = backendConfig.specialKeyHint;
+      const canResize = Boolean(getSelectedPane()?.supportsResize);
+      fitWidthBtn.hidden = !canResize;
+      linesInputEl.closest("label").hidden = getSelectedPane()?.backendId === "zellij";
     }
 
     function escapeHtml(text) {
@@ -1199,16 +1274,17 @@ app.get("/", (_req, res) => {
 
     function renderPanes() {
       renderSessionOptions();
+      renderActionButtons();
 
       paneListEl.innerHTML = getVisiblePanes().map((pane) => {
-        const active = pane.paneId === selectedPaneId ? "active" : "";
+        const active = pane.paneKey === selectedPaneKey ? "active" : "";
         const title = pane.title || "(no title)";
         const command = pane.currentCommand || "";
-        const tooltip = [pane.label, pane.paneId, title, command].filter(Boolean).join(" / ");
+        const tooltip = [pane.backendDisplayName, pane.label, pane.paneId, title, command].filter(Boolean).join(" / ");
         const compactLabel = pane.windowIndex + "." + pane.paneIndex;
-        const label = isCompactLayout() ? compactLabel : pane.label;
+        const label = isCompactLayout() ? compactLabel : (pane.backendDisplayName + ":" + pane.label);
         return \`
-          <div class="pane-item \${active}" data-pane-id="\${pane.paneId}" title="\${escapeHtml(tooltip)}">
+          <div class="pane-item \${active}" data-pane-key="\${pane.paneKey}" title="\${escapeHtml(tooltip)}">
             <div class="line1">\${escapeHtml(label)}</div>
             <div class="line2">\${escapeHtml(title)} / \${escapeHtml(command)}</div>
           </div>
@@ -1217,16 +1293,12 @@ app.get("/", (_req, res) => {
 
       for (const el of paneListEl.querySelectorAll(".pane-item")) {
         el.addEventListener("click", async () => {
-          selectedPaneId = el.dataset.paneId;
+          selectedPaneKey = el.dataset.paneKey;
           syncSelectedSession();
           renderPanes();
           await loadCapture();
         });
       }
-    }
-
-    function getSelectedPane() {
-      return panes.find((pane) => pane.paneId === selectedPaneId) || null;
     }
 
     async function api(path, options = {}) {
@@ -1247,20 +1319,20 @@ app.get("/", (_req, res) => {
         const data = await api("/api/panes");
         panes = data.panes;
 
-        if (!selectedPaneId || !panes.some((p) => p.paneId === selectedPaneId)) {
-          selectedPaneId = panes[0]?.paneId || null;
+        if (!selectedPaneKey || !panes.some((p) => p.paneKey === selectedPaneKey)) {
+          selectedPaneKey = panes[0]?.paneKey || null;
         }
 
         syncSelectedSession();
         renderPanes();
 
-        if (selectedPaneId) {
+        if (selectedPaneKey) {
           await loadCapture();
         } else {
           selectedTitleEl.textContent = "paneが見つからないよ";
           captureEl.innerHTML = "";
           lastCaptureRaw = "";
-          setStatus(backend.displayName + " paneなし");
+          setStatus(data.errors?.length ? data.errors.join(" | ") : "paneなし");
         }
       } catch (error) {
         setStatus(error.message, true);
@@ -1268,20 +1340,23 @@ app.get("/", (_req, res) => {
     }
 
     async function loadCapture() {
-      if (!selectedPaneId) return;
+      if (!selectedPaneKey) return;
 
       try {
         const lines = Math.max(1, Math.min(5000, Number(linesInputEl.value) || 300));
         const pane = getSelectedPane();
         selectedTitleEl.textContent = pane
-          ? \`\${pane.label} \${pane.paneId} / \${pane.title || "(no title)"}\`
-          : selectedPaneId;
+          ? \`[\${pane.backendDisplayName}] \${pane.label} \${pane.paneId} / \${pane.title || "(no title)"}\`
+          : selectedPaneKey;
 
         setStatus("capture取得中...");
+        const backendQuery = pane?.backendId
+          ? \`&backendId=\${encodeURIComponent(pane.backendId)}\`
+          : "";
         const sessionQuery = pane?.sessionName
           ? \`&sessionName=\${encodeURIComponent(pane.sessionName)}\`
           : "";
-        const data = await api(\`/api/capture?paneId=\${encodeURIComponent(selectedPaneId)}&lines=\${lines}\${sessionQuery}\`);
+        const data = await api(\`/api/capture?paneId=\${encodeURIComponent(pane?.paneId || "")}&lines=\${lines}\${backendQuery}\${sessionQuery}\`);
         if (lastCaptureRaw !== data.content) {
           captureEl.innerHTML = renderAnsiToHtml(data.content);
           lastCaptureRaw = data.content;
@@ -1296,7 +1371,7 @@ app.get("/", (_req, res) => {
     }
 
     async function sendInput(withEnter) {
-      if (!selectedPaneId) {
+      if (!selectedPaneKey) {
         setStatus("paneを選んでね", true);
         return;
       }
@@ -1307,7 +1382,8 @@ app.get("/", (_req, res) => {
         await api("/api/send", {
           method: "POST",
           body: JSON.stringify({
-            paneId: selectedPaneId,
+            backendId: pane?.backendId || "",
+            paneId: pane?.paneId || "",
             sessionName: pane?.sessionName || "",
             text,
             enter: withEnter
@@ -1322,7 +1398,7 @@ app.get("/", (_req, res) => {
     }
 
     async function sendSpecialKey(key, label) {
-      if (!selectedPaneId) {
+      if (!selectedPaneKey) {
         setStatus("paneを選んでね", true);
         return;
       }
@@ -1332,7 +1408,8 @@ app.get("/", (_req, res) => {
         await api("/api/send-key", {
           method: "POST",
           body: JSON.stringify({
-            paneId: selectedPaneId,
+            backendId: pane?.backendId || "",
+            paneId: pane?.paneId || "",
             sessionName: pane?.sessionName || "",
             key
           })
@@ -1347,7 +1424,7 @@ app.get("/", (_req, res) => {
     }
 
     async function fitPaneWidthToCapture() {
-      if (!selectedPaneId) {
+      if (!selectedPaneKey) {
         setStatus("paneを選んでね", true);
         return;
       }
@@ -1364,7 +1441,8 @@ app.get("/", (_req, res) => {
         await api("/api/resize-pane", {
           method: "POST",
           body: JSON.stringify({
-            paneId: selectedPaneId,
+            backendId: pane?.backendId || "",
+            paneId: pane?.paneId || "",
             sessionName: pane?.sessionName || "",
             columns,
           })
@@ -1379,20 +1457,18 @@ app.get("/", (_req, res) => {
     fitWidthBtn.addEventListener("click", fitPaneWidthToCapture);
     refreshCaptureBtn.addEventListener("click", loadCapture);
     sessionSelectEl.addEventListener("change", async () => {
-      selectedSessionName = sessionSelectEl.value;
-      const sessionPanes = panes.filter((pane) => pane.sessionName === selectedSessionName);
-      if (!sessionPanes.some((pane) => pane.paneId === selectedPaneId)) {
-        selectedPaneId = sessionPanes[0]?.paneId || null;
+      selectedSessionKey = sessionSelectEl.value;
+      const sessionPanes = panes.filter((pane) => (pane.backendId + ":" + pane.sessionName) === selectedSessionKey);
+      if (!sessionPanes.some((pane) => pane.paneKey === selectedPaneKey)) {
+        selectedPaneKey = sessionPanes[0]?.paneKey || null;
       }
       renderPanes();
-      if (selectedPaneId) {
+      if (selectedPaneKey) {
         await loadCapture();
       }
     });
     sendBtn.addEventListener("click", () => sendInput(false));
     sendEnterBtn.addEventListener("click", () => sendInput(true));
-    renderActionButtons();
-    renderSpecialKeyButtons(extraSpecialKeysEl, extraSpecialKeys);
     toggleSpecialKeysBtn.addEventListener("click", () => {
       setSpecialKeyPopoverOpen(specialKeyPopoverEl.hidden);
       if (!specialKeyPopoverEl.hidden) {
@@ -1403,7 +1479,7 @@ app.get("/", (_req, res) => {
       event.preventDefault();
       const key = customSpecialKeyInputEl.value.trim();
       if (!key) {
-        setStatus(backend.displayName + " key name を入れてね", true);
+        setStatus(getSelectedBackendConfig().displayName + " key name を入れてね", true);
         return;
       }
       await sendSpecialKey(key, key);
@@ -1444,8 +1520,8 @@ app.get("/", (_req, res) => {
 
 app.get("/api/panes", async (_req, res) => {
   try {
-    const panes = await muxBackend.listPanes();
-    res.json({ panes });
+    const { panes, errors } = await listAllPanes();
+    res.json({ panes, errors });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1453,16 +1529,23 @@ app.get("/api/panes", async (_req, res) => {
 
 app.get("/api/capture", async (req, res) => {
   try {
+    const backendId = String(req.query.backendId || "");
     const paneId = String(req.query.paneId || "");
     const sessionName = String(req.query.sessionName || "");
     const lines = Math.max(1, Math.min(5000, Number(req.query.lines) || 300));
+    const backend = getBackendById(backendId);
 
-    if (!muxBackend.isValidPaneId(paneId)) {
+    if (!backend) {
+      res.status(400).json({ error: "invalid backendId" });
+      return;
+    }
+
+    if (!backend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
-    const stdout = await muxBackend.capturePane(paneId, lines, sessionName);
+    const stdout = await backend.capturePane(paneId, lines, sessionName);
 
     res.json({ content: stdout });
   } catch (error) {
@@ -1472,22 +1555,29 @@ app.get("/api/capture", async (req, res) => {
 
 app.post("/api/send", async (req, res) => {
   try {
+    const backendId = String(req.body?.backendId || "");
     const paneId = String(req.body?.paneId || "");
     const sessionName = String(req.body?.sessionName || "");
     const text = String(req.body?.text || "");
     const enter = Boolean(req.body?.enter);
+    const backend = getBackendById(backendId);
 
-    if (!muxBackend.isValidPaneId(paneId)) {
+    if (!backend) {
+      res.status(400).json({ error: "invalid backendId" });
+      return;
+    }
+
+    if (!backend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
     if (text.length > 0) {
-      await muxBackend.sendTextToPane(paneId, text, sessionName);
+      await backend.sendTextToPane(paneId, text, sessionName);
     }
 
     if (enter) {
-      await muxBackend.sendEnterKey(paneId, text.length > 0, sessionName);
+      await backend.sendEnterKey(paneId, text.length > 0, sessionName);
     }
     res.json({ ok: true });
   } catch (error) {
@@ -1497,22 +1587,29 @@ app.post("/api/send", async (req, res) => {
 
 app.post("/api/send-key", async (req, res) => {
   try {
+    const backendId = String(req.body?.backendId || "");
     const paneId = String(req.body?.paneId || "");
     const sessionName = String(req.body?.sessionName || "");
     const key = String(req.body?.key || "");
+    const backend = getBackendById(backendId);
 
-    if (!muxBackend.isValidPaneId(paneId)) {
+    if (!backend) {
+      res.status(400).json({ error: "invalid backendId" });
+      return;
+    }
+
+    if (!backend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
-    if (!muxBackend.isValidKeyName(key)) {
+    if (!backend.isValidKeyName(key)) {
       res.status(400).json({ error: "invalid key" });
       return;
     }
 
-    await muxBackend.sendKeyToPane(paneId, key, sessionName);
-    res.json({ ok: true, label: muxBackend.specialKeyLabels[key] || key });
+    await backend.sendKeyToPane(paneId, key, sessionName);
+    res.json({ ok: true, label: backend.specialKeyLabels[key] || key });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1520,16 +1617,23 @@ app.post("/api/send-key", async (req, res) => {
 
 app.post("/api/resize-pane", async (req, res) => {
   try {
+    const backendId = String(req.body?.backendId || "");
     const paneId = String(req.body?.paneId || "");
     const sessionName = String(req.body?.sessionName || "");
     const columns = clampPaneWidth(Math.floor(Number(req.body?.columns)));
+    const backend = getBackendById(backendId);
 
-    if (!muxBackend.supportsResize) {
+    if (!backend) {
+      res.status(400).json({ error: "invalid backendId" });
+      return;
+    }
+
+    if (!backend.supportsResize) {
       res.status(400).json({ error: "resize-pane is not supported by this backend" });
       return;
     }
 
-    if (!muxBackend.isValidPaneId(paneId)) {
+    if (!backend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
@@ -1539,7 +1643,7 @@ app.post("/api/resize-pane", async (req, res) => {
       return;
     }
 
-    await muxBackend.resizePane(paneId, columns, sessionName);
+    await backend.resizePane(paneId, columns, sessionName);
     res.json({ ok: true, columns });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1547,5 +1651,5 @@ app.post("/api/resize-pane", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`${muxBackend.displayName} mini web UI: http://localhost:${PORT}`);
+  console.log(`webmux: http://localhost:${PORT}`);
 });

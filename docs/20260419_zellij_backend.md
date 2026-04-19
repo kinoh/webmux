@@ -8,3 +8,5 @@
   Zellij's current CLI automation docs clearly cover pane listing, screen dumping, paste, and send-keys, but this project only had a direct width-based resize flow for tmux.
 - Switched Zellij text injection to `paste` and key injection to `send-keys`.
   This follows the current programmatic control guidance and avoids reimplementing multiline input behavior that Zellij already handles.
+- Replaced backend process-wide switching with per-pane backend routing.
+  The UI needs to list and operate on tmux and Zellij panes at the same time, so selecting a single active backend in process state was the wrong dependency direction.
