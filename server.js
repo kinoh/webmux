@@ -36,7 +36,17 @@ const PRIMARY_SPECIAL_KEYS = [
   "C-c",
   "Escape",
 ];
+const MOBILE_PRIMARY_SPECIAL_KEYS = [
+  "C-c",
+  "Up",
+  "Tab",
+  "BSpace",
+  "Left",
+  "Down",
+  "Right",
+];
 const EXTRA_SPECIAL_KEYS = [
+  "DC",
   "Home",
   "End",
   "PageUp",
@@ -387,7 +397,7 @@ app.get("/", (_req, res) => {
       }
       .command-actions {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         position: relative;
       }
       .command-actions button {
@@ -507,6 +517,7 @@ app.get("/", (_req, res) => {
     const customSpecialKeyInputEl = document.getElementById("customSpecialKeyInput");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
     const primarySpecialKeys = ${JSON.stringify(PRIMARY_SPECIAL_KEYS)};
+    const mobilePrimarySpecialKeys = ${JSON.stringify(MOBILE_PRIMARY_SPECIAL_KEYS)};
     const extraSpecialKeys = ${JSON.stringify(EXTRA_SPECIAL_KEYS)};
     const specialKeyLabels = ${JSON.stringify(SPECIAL_KEY_LABELS)};
     const ANSI_ESCAPE = String.fromCharCode(27);
@@ -606,6 +617,11 @@ app.get("/", (_req, res) => {
           await sendSpecialKey(buttonEl.dataset.specialKey, getSpecialKeyLabel(buttonEl.dataset.specialKey));
         });
       }
+    }
+
+    function renderActionButtons() {
+      const keys = isCompactLayout() ? mobilePrimarySpecialKeys : primarySpecialKeys;
+      renderSpecialKeyButtons(primarySpecialKeysEl, keys);
     }
 
     function escapeHtml(text) {
@@ -1042,7 +1058,7 @@ app.get("/", (_req, res) => {
     });
     sendBtn.addEventListener("click", () => sendInput(false));
     sendEnterBtn.addEventListener("click", () => sendInput(true));
-    renderSpecialKeyButtons(primarySpecialKeysEl, primarySpecialKeys);
+    renderActionButtons();
     renderSpecialKeyButtons(extraSpecialKeysEl, extraSpecialKeys);
     toggleSpecialKeysBtn.addEventListener("click", () => {
       setSpecialKeyPopoverOpen(specialKeyPopoverEl.hidden);
@@ -1073,6 +1089,7 @@ app.get("/", (_req, res) => {
     linesInputEl.addEventListener("change", loadCapture);
     const handleLayoutChange = () => {
       renderPanes();
+      renderActionButtons();
     };
     if (typeof compactLayoutQuery.addEventListener === "function") {
       compactLayoutQuery.addEventListener("change", handleLayoutChange);
