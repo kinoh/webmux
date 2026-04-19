@@ -140,13 +140,18 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function stripAnsi(text) {
+  return String(text).replace(/\u001b\[[0-9;]*m/g, "");
+}
+
 function parseZellijSessionNames(stdout) {
   return unique(
     stdout
       .split("\n")
-      .map((line) => line.trim())
+      .map((line) => stripAnsi(line).trim())
       .filter(Boolean)
-      .map((line) => line.split(/\s+/)[0])
+      .filter((line) => !line.includes("(EXITED"))
+      .map((line) => line.split(" [")[0]?.trim())
       .filter(Boolean)
   );
 }
