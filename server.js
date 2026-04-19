@@ -7,7 +7,7 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 5010;
 const ENTER_DELAY_MS = 10;
-const SPECIAL_KEY_LABELS = {
+const TMUX_SPECIAL_KEY_LABELS = {
   "C-c": "Ctrl+C",
   "C-d": "Ctrl+D",
   "C-l": "Ctrl+L",
@@ -25,7 +25,25 @@ const SPECIAL_KEY_LABELS = {
   PageUp: "PageUp",
   PageDown: "PageDown",
 };
-const PRIMARY_SPECIAL_KEYS = [
+const ZELLIJ_SPECIAL_KEY_LABELS = {
+  "Ctrl c": "Ctrl+C",
+  "Ctrl d": "Ctrl+D",
+  "Ctrl l": "Ctrl+L",
+  "Ctrl z": "Ctrl+Z",
+  Esc: "Esc",
+  Up: "↑",
+  Down: "↓",
+  Left: "←",
+  Right: "→",
+  Tab: "Tab",
+  Backspace: "Backspace",
+  Delete: "Delete",
+  Home: "Home",
+  End: "End",
+  PageUp: "PageUp",
+  PageDown: "PageDown",
+};
+const TMUX_PRIMARY_SPECIAL_KEYS = [
   "Tab",
   "BSpace",
   "DC",
@@ -36,7 +54,18 @@ const PRIMARY_SPECIAL_KEYS = [
   "C-c",
   "Escape",
 ];
-const MOBILE_PRIMARY_SPECIAL_KEYS = [
+const ZELLIJ_PRIMARY_SPECIAL_KEYS = [
+  "Tab",
+  "Backspace",
+  "Delete",
+  "Up",
+  "Down",
+  "Left",
+  "Right",
+  "Ctrl c",
+  "Esc",
+];
+const TMUX_MOBILE_PRIMARY_SPECIAL_KEYS = [
   "C-c",
   "Up",
   "Tab",
@@ -45,16 +74,27 @@ const MOBILE_PRIMARY_SPECIAL_KEYS = [
   "Down",
   "Right",
 ];
+const ZELLIJ_MOBILE_PRIMARY_SPECIAL_KEYS = [
+  "Ctrl c",
+  "Up",
+  "Tab",
+  "Backspace",
+  "Left",
+  "Down",
+  "Right",
+];
 const MOBILE_ACTION_ORDER = {
   "C-c": 2,
+  "Ctrl c": 2,
   Up: 3,
   Tab: 4,
   BSpace: 5,
+  Backspace: 5,
   Left: 7,
   Down: 8,
   Right: 9,
 };
-const EXTRA_SPECIAL_KEYS = [
+const TMUX_EXTRA_SPECIAL_KEYS = [
   "DC",
   "Escape",
   "Home",
@@ -65,14 +105,25 @@ const EXTRA_SPECIAL_KEYS = [
   "C-z",
   "C-l",
 ];
+const ZELLIJ_EXTRA_SPECIAL_KEYS = [
+  "Delete",
+  "Esc",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+  "Ctrl d",
+  "Ctrl z",
+  "Ctrl l",
+];
 
 app.use(express.json({ limit: "64kb" }));
 
-function runTmux(args) {
+function runCommand(command, args) {
   return new Promise((resolve, reject) => {
-    execFile("tmux", args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile(command, args, { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        const msg = stderr?.trim() || error.message || "tmux command failed";
+        const msg = stderr?.trim() || error.message || `${command} command failed`;
         reject(new Error(msg));
         return;
       }
@@ -81,50 +132,286 @@ function runTmux(args) {
   });
 }
 
-function isValidPaneId(paneId) {
-  return typeof paneId === "string" && /^%[0-9]+$/.test(paneId);
-}
-
-function isValidTmuxKeyName(key) {
-  return typeof key === "string" && /^[!-~]{1,64}$/.test(key);
-}
-
-function getSpecialKeyLabel(key) {
-  return SPECIAL_KEY_LABELS[key] || key;
+function unique(values) {
+  return [...new Set(values)];
 }
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function sendEnterKey(paneId, shouldDelayBefore = false) {
-  if (shouldDelayBefore) {
-    await sleep(ENTER_DELAY_MS);
-  }
-  await runTmux(["send-keys", "-t", paneId, "Enter"]);
-}
-
-async function sendTextToPane(paneId, text) {
-  const normalizedText = text.replace(/\r\n?/g, "\n");
-  const lines = normalizedText.split("\n");
-
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    const hasNextLine = index < lines.length - 1;
-
-    if (line.length > 0) {
-      await runTmux(["send-keys", "-t", paneId, "-l", line]);
-    }
-
-    if (hasNextLine) {
-      await sendEnterKey(paneId, line.length > 0);
-    }
-  }
+function parseZellijSessionNames(stdout) {
+  return unique(
+    stdout
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/)[0])
+      .filter(Boolean)
+  );
 }
 
 function clampPaneWidth(columns) {
   return Math.max(20, Math.min(2000, columns));
 }
+
+function createTmuxBackend() {
+  const config = {
+    id: "tmux",
+    command: "tmux",
+    displayName: "tmux",
+    supportsResize: true,
+    specialKeyLabels: TMUX_SPECIAL_KEY_LABELS,
+    primarySpecialKeys: TMUX_PRIMARY_SPECIAL_KEYS,
+    mobilePrimarySpecialKeys: TMUX_MOBILE_PRIMARY_SPECIAL_KEYS,
+    extraSpecialKeys: TMUX_EXTRA_SPECIAL_KEYS,
+    customKeyPlaceholder: "tmux key name",
+    specialKeyHint: "Use tmux key notation like F1, M-Left, C-b, NPage.",
+  };
+
+  function run(args) {
+    return runCommand(config.command, args);
+  }
+
+  async function sendEnterKey(paneId, shouldDelayBefore = false) {
+    if (shouldDelayBefore) {
+      await sleep(ENTER_DELAY_MS);
+    }
+    await run(["send-keys", "-t", paneId, "Enter"]);
+  }
+
+  return {
+    ...config,
+    isValidPaneId(paneId) {
+      return typeof paneId === "string" && /^%[0-9]+$/.test(paneId);
+    },
+    isValidKeyName(key) {
+      return typeof key === "string" && /^[!-~]{1,64}$/.test(key);
+    },
+    async listPanes() {
+      const format = [
+        "#{session_name}",
+        "#{window_index}",
+        "#{pane_index}",
+        "#{pane_id}",
+        "#{pane_title}",
+        "#{pane_current_command}",
+      ].join("\t");
+
+      const stdout = await run(["list-panes", "-a", "-F", format]);
+
+      return stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [sessionName, windowIndex, paneIndex, paneId, title, currentCommand] = line.split("\t");
+          return {
+            sessionName,
+            windowIndex,
+            paneIndex,
+            paneId,
+            title,
+            currentCommand,
+            label: `${sessionName}:${windowIndex}.${paneIndex}`,
+          };
+        });
+    },
+    async capturePane(paneId, lines, _sessionName) {
+      return run([
+        "capture-pane",
+        "-t",
+        paneId,
+        "-e",
+        "-p",
+        "-S",
+        `-${lines}`,
+      ]);
+    },
+    async sendTextToPane(paneId, text, _sessionName) {
+      const normalizedText = text.replace(/\r\n?/g, "\n");
+      const splitLines = normalizedText.split("\n");
+
+      for (let index = 0; index < splitLines.length; index += 1) {
+        const line = splitLines[index];
+        const hasNextLine = index < splitLines.length - 1;
+
+        if (line.length > 0) {
+          await run(["send-keys", "-t", paneId, "-l", line]);
+        }
+
+        if (hasNextLine) {
+          await sendEnterKey(paneId, line.length > 0);
+        }
+      }
+    },
+    async sendEnterKey(paneId, shouldDelayBefore = false, _sessionName) {
+      await sendEnterKey(paneId, shouldDelayBefore);
+    },
+    async sendKeyToPane(paneId, key, _sessionName) {
+      await run(["send-keys", "-t", paneId, key]);
+    },
+    async resizePane(paneId, columns, _sessionName) {
+      await run(["resize-pane", "-t", paneId, "-x", String(columns)]);
+      return columns;
+    },
+  };
+}
+
+function createZellijBackend() {
+  const config = {
+    id: "zellij",
+    command: "zellij",
+    displayName: "zellij",
+    supportsResize: false,
+    specialKeyLabels: ZELLIJ_SPECIAL_KEY_LABELS,
+    primarySpecialKeys: ZELLIJ_PRIMARY_SPECIAL_KEYS,
+    mobilePrimarySpecialKeys: ZELLIJ_MOBILE_PRIMARY_SPECIAL_KEYS,
+    extraSpecialKeys: ZELLIJ_EXTRA_SPECIAL_KEYS,
+    customKeyPlaceholder: "zellij key name",
+    specialKeyHint: "Use Zellij key names like F1, Ctrl c, Alt Left, PageDown.",
+  };
+
+  function run(args) {
+    return runCommand(config.command, args);
+  }
+
+  function parseTargetPaneId(paneId) {
+    if (typeof paneId !== "string") {
+      return null;
+    }
+    const match = /^(terminal|plugin)_([0-9]+)$/.exec(paneId);
+    if (!match) {
+      return null;
+    }
+    return {
+      type: match[1],
+      numericId: match[2],
+      fullId: paneId,
+    };
+  }
+
+  function buildSessionArgs(sessionName) {
+    return sessionName ? ["--session", sessionName] : [];
+  }
+
+  async function listSessionNames() {
+    const stdout = await run(["list-sessions"]);
+    return parseZellijSessionNames(stdout);
+  }
+
+  async function listTabsForSession(sessionName) {
+    const stdout = await run([...buildSessionArgs(sessionName), "action", "list-tabs", "--json"]);
+    const tabs = JSON.parse(stdout);
+    return new Map(
+      tabs.map((tab) => [
+        String(tab.tab_id),
+        {
+          position: tab.position,
+          name: tab.name,
+        },
+      ])
+    );
+  }
+
+  return {
+    ...config,
+    isValidPaneId(paneId) {
+      return parseTargetPaneId(paneId) !== null;
+    },
+    isValidKeyName(key) {
+      return typeof key === "string" && /^[A-Za-z0-9 ][A-Za-z0-9 +_-]{0,63}$/.test(key);
+    },
+    async listPanes() {
+      const sessionNames = await listSessionNames();
+      const allPanes = [];
+
+      for (const sessionName of sessionNames) {
+        const [paneStdout, tabsById] = await Promise.all([
+          run([...buildSessionArgs(sessionName), "action", "list-panes", "--json"]),
+          listTabsForSession(sessionName),
+        ]);
+        const panes = JSON.parse(paneStdout);
+        const paneIndexes = new Map();
+
+        for (const pane of panes) {
+          if (pane.is_plugin) {
+            continue;
+          }
+
+          const tabId = String(pane.tab_id ?? "");
+          const tabInfo = tabsById.get(tabId) || {};
+          const paneKey = `${sessionName}:${tabId}`;
+          const nextPaneIndex = (paneIndexes.get(paneKey) || 0) + 1;
+          paneIndexes.set(paneKey, nextPaneIndex);
+          const windowIndex = String(tabInfo.position ?? pane.tab_id ?? 0);
+          const paneIndex = String(nextPaneIndex);
+          const paneId = `terminal_${pane.id}`;
+          const title = pane.title || "";
+          const currentCommand = pane.pane_command || "";
+
+          allPanes.push({
+            sessionName,
+            windowIndex,
+            paneIndex,
+            paneId,
+            title,
+            currentCommand,
+            label: `${sessionName}:${windowIndex}.${paneIndex}`,
+            tabName: tabInfo.name || pane.tab_name || "",
+          });
+        }
+      }
+
+      return allPanes;
+    },
+    async capturePane(paneId, _lines, sessionName) {
+      const targetPane = parseTargetPaneId(paneId);
+      if (!targetPane) {
+        throw new Error("invalid paneId");
+      }
+      return run([...buildSessionArgs(sessionName), "action", "dump-screen", "--pane-id", targetPane.fullId, "--full", "--ansi"]);
+    },
+    async sendTextToPane(paneId, text, sessionName) {
+      const targetPane = parseTargetPaneId(paneId);
+      if (!targetPane) {
+        throw new Error("invalid paneId");
+      }
+      if (text.length === 0) {
+        return;
+      }
+      await run([...buildSessionArgs(sessionName), "action", "paste", "--pane-id", targetPane.fullId, text]);
+    },
+    async sendEnterKey(paneId, _shouldDelayBefore, sessionName) {
+      const targetPane = parseTargetPaneId(paneId);
+      if (!targetPane) {
+        throw new Error("invalid paneId");
+      }
+      await run([...buildSessionArgs(sessionName), "action", "send-keys", "--pane-id", targetPane.fullId, "Enter"]);
+    },
+    async sendKeyToPane(paneId, key, sessionName) {
+      const targetPane = parseTargetPaneId(paneId);
+      if (!targetPane) {
+        throw new Error("invalid paneId");
+      }
+      await run([...buildSessionArgs(sessionName), "action", "send-keys", "--pane-id", targetPane.fullId, key]);
+    },
+    async resizePane() {
+      throw new Error("resize-pane is not supported for zellij yet");
+    },
+  };
+}
+
+function createMuxBackend(backendId) {
+  if (backendId === "tmux") {
+    return createTmuxBackend();
+  }
+  if (backendId === "zellij") {
+    return createZellijBackend();
+  }
+  throw new Error(`unsupported MUX_BACKEND: ${backendId}`);
+}
+
+const muxBackend = createMuxBackend(process.env.MUX_BACKEND || "tmux");
 
 app.get("/", (_req, res) => {
   res.type("html").send(`<!doctype html>
@@ -132,7 +419,7 @@ app.get("/", (_req, res) => {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>tmux mini web UI</title>
+  <title>${muxBackend.displayName} mini web UI</title>
   <style>
     :root {
       color-scheme: dark;
@@ -464,7 +751,7 @@ app.get("/", (_req, res) => {
 <body>
   <aside class="sidebar">
     <div class="header">
-      <div class="title">tmux panes</div>
+      <div class="title">${muxBackend.displayName} panes</div>
       <div class="toolbar">
         <label class="session-picker">
           <span>session</span>
@@ -480,11 +767,11 @@ app.get("/", (_req, res) => {
       <div class="header">
         <div id="selectedTitle" class="title">paneを選んでね</div>
         <div class="toolbar">
-          <label style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;">
+          <label id="linesControl" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;"${muxBackend.id === "zellij" ? " hidden" : ""}>
             行数
             <input id="linesInput" type="text" value="300" style="width:72px;" />
           </label>
-          <button id="fitWidthBtn">幅合わせ</button>
+          <button id="fitWidthBtn"${muxBackend.supportsResize ? "" : " hidden"}>幅合わせ</button>
           <button id="refreshCaptureBtn">再読込</button>
         </div>
       </div>
@@ -503,10 +790,10 @@ app.get("/", (_req, res) => {
           <div id="specialKeyPopover" class="special-key-popover" hidden>
             <div id="extraSpecialKeys" class="special-key-grid"></div>
             <form id="customSpecialKeyForm" class="special-key-custom">
-              <input id="customSpecialKeyInput" type="text" placeholder="tmux key name" spellcheck="false" />
+              <input id="customSpecialKeyInput" type="text" placeholder="${muxBackend.customKeyPlaceholder}" spellcheck="false" />
               <button type="submit">Send key</button>
             </form>
-            <p class="special-key-hint">Use tmux key notation like F1, M-Left, C-b, NPage.</p>
+            <p class="special-key-hint">${muxBackend.specialKeyHint}</p>
           </div>
         </div>
       </div>
@@ -533,11 +820,16 @@ app.get("/", (_req, res) => {
     const customSpecialKeyFormEl = document.getElementById("customSpecialKeyForm");
     const customSpecialKeyInputEl = document.getElementById("customSpecialKeyInput");
     const compactLayoutQuery = window.matchMedia("(max-width: 800px)");
-    const primarySpecialKeys = ${JSON.stringify(PRIMARY_SPECIAL_KEYS)};
-    const mobilePrimarySpecialKeys = ${JSON.stringify(MOBILE_PRIMARY_SPECIAL_KEYS)};
+    const backend = ${JSON.stringify({
+      id: muxBackend.id,
+      displayName: muxBackend.displayName,
+      supportsResize: muxBackend.supportsResize,
+    })};
+    const primarySpecialKeys = ${JSON.stringify(muxBackend.primarySpecialKeys)};
+    const mobilePrimarySpecialKeys = ${JSON.stringify(muxBackend.mobilePrimarySpecialKeys)};
     const mobileActionOrder = ${JSON.stringify(MOBILE_ACTION_ORDER)};
-    const extraSpecialKeys = ${JSON.stringify(EXTRA_SPECIAL_KEYS)};
-    const specialKeyLabels = ${JSON.stringify(SPECIAL_KEY_LABELS)};
+    const extraSpecialKeys = ${JSON.stringify(muxBackend.extraSpecialKeys)};
+    const specialKeyLabels = ${JSON.stringify(muxBackend.specialKeyLabels)};
     const ANSI_ESCAPE = String.fromCharCode(27);
     const ANSI_BELL = String.fromCharCode(7);
     const ANSI_SGR_PATTERN = new RegExp(ANSI_ESCAPE + "\\\\[([0-9;]*)m", "g");
@@ -928,6 +1220,10 @@ app.get("/", (_req, res) => {
       }
     }
 
+    function getSelectedPane() {
+      return panes.find((pane) => pane.paneId === selectedPaneId) || null;
+    }
+
     async function api(path, options = {}) {
       const res = await fetch(path, {
         headers: { "Content-Type": "application/json" },
@@ -959,7 +1255,7 @@ app.get("/", (_req, res) => {
           selectedTitleEl.textContent = "paneが見つからないよ";
           captureEl.innerHTML = "";
           lastCaptureRaw = "";
-          setStatus("tmux paneなし");
+          setStatus(backend.displayName + " paneなし");
         }
       } catch (error) {
         setStatus(error.message, true);
@@ -971,13 +1267,16 @@ app.get("/", (_req, res) => {
 
       try {
         const lines = Math.max(1, Math.min(5000, Number(linesInputEl.value) || 300));
-        const pane = panes.find((p) => p.paneId === selectedPaneId);
+        const pane = getSelectedPane();
         selectedTitleEl.textContent = pane
           ? \`\${pane.label} \${pane.paneId} / \${pane.title || "(no title)"}\`
           : selectedPaneId;
 
         setStatus("capture取得中...");
-        const data = await api(\`/api/capture?paneId=\${encodeURIComponent(selectedPaneId)}&lines=\${lines}\`);
+        const sessionQuery = pane?.sessionName
+          ? \`&sessionName=\${encodeURIComponent(pane.sessionName)}\`
+          : "";
+        const data = await api(\`/api/capture?paneId=\${encodeURIComponent(selectedPaneId)}&lines=\${lines}\${sessionQuery}\`);
         if (lastCaptureRaw !== data.content) {
           captureEl.innerHTML = renderAnsiToHtml(data.content);
           lastCaptureRaw = data.content;
@@ -999,10 +1298,12 @@ app.get("/", (_req, res) => {
 
       try {
         const text = commandInputEl.value;
+        const pane = getSelectedPane();
         await api("/api/send", {
           method: "POST",
           body: JSON.stringify({
             paneId: selectedPaneId,
+            sessionName: pane?.sessionName || "",
             text,
             enter: withEnter
           })
@@ -1022,10 +1323,12 @@ app.get("/", (_req, res) => {
       }
 
       try {
+        const pane = getSelectedPane();
         await api("/api/send-key", {
           method: "POST",
           body: JSON.stringify({
             paneId: selectedPaneId,
+            sessionName: pane?.sessionName || "",
             key
           })
         });
@@ -1052,10 +1355,12 @@ app.get("/", (_req, res) => {
 
       try {
         setStatus("pane幅を調整中...");
+        const pane = getSelectedPane();
         await api("/api/resize-pane", {
           method: "POST",
           body: JSON.stringify({
             paneId: selectedPaneId,
+            sessionName: pane?.sessionName || "",
             columns,
           })
         });
@@ -1093,7 +1398,7 @@ app.get("/", (_req, res) => {
       event.preventDefault();
       const key = customSpecialKeyInputEl.value.trim();
       if (!key) {
-        setStatus("tmux key name を入れてね", true);
+        setStatus(backend.displayName + " key name を入れてね", true);
         return;
       }
       await sendSpecialKey(key, key);
@@ -1134,33 +1439,7 @@ app.get("/", (_req, res) => {
 
 app.get("/api/panes", async (_req, res) => {
   try {
-    const format = [
-      "#{session_name}",
-      "#{window_index}",
-      "#{pane_index}",
-      "#{pane_id}",
-      "#{pane_title}",
-      "#{pane_current_command}",
-    ].join("\t");
-
-    const stdout = await runTmux(["list-panes", "-a", "-F", format]);
-
-    const panes = stdout
-      .split("\n")
-      .filter(Boolean)
-      .map((line) => {
-        const [sessionName, windowIndex, paneIndex, paneId, title, currentCommand] = line.split("\t");
-        return {
-          sessionName,
-          windowIndex,
-          paneIndex,
-          paneId,
-          title,
-          currentCommand,
-          label: `${sessionName}:${windowIndex}.${paneIndex}`,
-        };
-      });
-
+    const panes = await muxBackend.listPanes();
     res.json({ panes });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1170,22 +1449,15 @@ app.get("/api/panes", async (_req, res) => {
 app.get("/api/capture", async (req, res) => {
   try {
     const paneId = String(req.query.paneId || "");
+    const sessionName = String(req.query.sessionName || "");
     const lines = Math.max(1, Math.min(5000, Number(req.query.lines) || 300));
 
-    if (!isValidPaneId(paneId)) {
+    if (!muxBackend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
-    const stdout = await runTmux([
-      "capture-pane",
-      "-t",
-      paneId,
-      "-e",
-      "-p",
-      "-S",
-      `-${lines}`,
-    ]);
+    const stdout = await muxBackend.capturePane(paneId, lines, sessionName);
 
     res.json({ content: stdout });
   } catch (error) {
@@ -1196,20 +1468,21 @@ app.get("/api/capture", async (req, res) => {
 app.post("/api/send", async (req, res) => {
   try {
     const paneId = String(req.body?.paneId || "");
+    const sessionName = String(req.body?.sessionName || "");
     const text = String(req.body?.text || "");
     const enter = Boolean(req.body?.enter);
 
-    if (!isValidPaneId(paneId)) {
+    if (!muxBackend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
     if (text.length > 0) {
-      await sendTextToPane(paneId, text);
+      await muxBackend.sendTextToPane(paneId, text, sessionName);
     }
 
     if (enter) {
-      await sendEnterKey(paneId, text.length > 0);
+      await muxBackend.sendEnterKey(paneId, text.length > 0, sessionName);
     }
     res.json({ ok: true });
   } catch (error) {
@@ -1220,20 +1493,21 @@ app.post("/api/send", async (req, res) => {
 app.post("/api/send-key", async (req, res) => {
   try {
     const paneId = String(req.body?.paneId || "");
+    const sessionName = String(req.body?.sessionName || "");
     const key = String(req.body?.key || "");
 
-    if (!isValidPaneId(paneId)) {
+    if (!muxBackend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
 
-    if (!isValidTmuxKeyName(key)) {
+    if (!muxBackend.isValidKeyName(key)) {
       res.status(400).json({ error: "invalid key" });
       return;
     }
 
-    await runTmux(["send-keys", "-t", paneId, key]);
-    res.json({ ok: true, label: getSpecialKeyLabel(key) });
+    await muxBackend.sendKeyToPane(paneId, key, sessionName);
+    res.json({ ok: true, label: muxBackend.specialKeyLabels[key] || key });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1242,9 +1516,15 @@ app.post("/api/send-key", async (req, res) => {
 app.post("/api/resize-pane", async (req, res) => {
   try {
     const paneId = String(req.body?.paneId || "");
+    const sessionName = String(req.body?.sessionName || "");
     const columns = clampPaneWidth(Math.floor(Number(req.body?.columns)));
 
-    if (!isValidPaneId(paneId)) {
+    if (!muxBackend.supportsResize) {
+      res.status(400).json({ error: "resize-pane is not supported by this backend" });
+      return;
+    }
+
+    if (!muxBackend.isValidPaneId(paneId)) {
       res.status(400).json({ error: "invalid paneId" });
       return;
     }
@@ -1254,7 +1534,7 @@ app.post("/api/resize-pane", async (req, res) => {
       return;
     }
 
-    await runTmux(["resize-pane", "-t", paneId, "-x", String(columns)]);
+    await muxBackend.resizePane(paneId, columns, sessionName);
     res.json({ ok: true, columns });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -1262,5 +1542,5 @@ app.post("/api/resize-pane", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`tmux mini web UI: http://localhost:${PORT}`);
+  console.log(`${muxBackend.displayName} mini web UI: http://localhost:${PORT}`);
 });
