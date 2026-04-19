@@ -6,7 +6,7 @@
   <title>webmux</title>
   <link rel="stylesheet" media="screen" href="https://fontlibrary.org//face/sometype-mono" type="text/css" />
   <style>
-    :root { color-scheme: dark; --bg: #0f1115; --panel: #171a21; --panel2: #1f2430; --border: #2d3445; --text: #e6e9ef; --muted: #9aa4b2; --accent: #78a6ff; --danger: #ff7b7b; --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --font-mono: "SometypeMonoRegular", "Sometype Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    :root { color-scheme: dark; --bg: #0f1115; --panel: #171a21; --panel2: #1f2430; --border: #2d3445; --text: #e6e9ef; --muted: #9aa4b2; --accent: #78a6ff; --danger: #ff7b7b; --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; --font-mono: "SometypeMonoRegular", "Sometype Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; --capture-font-size: 13px; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: var(--font-ui); background: var(--bg); color: var(--text); min-height: 100dvh; display: grid; grid-template-columns: 320px 1fr; }
     .sidebar { border-right: 1px solid var(--border); background: var(--panel); overflow: auto; }
@@ -23,7 +23,10 @@
     .pane-item .line1 { font-weight: 700; margin-bottom: 4px; word-break: break-all; }
     .pane-item .line2 { font-size: 12px; color: var(--muted); word-break: break-all; }
     .capture-wrap { min-height: 0; display: flex; flex-direction: column; }
-    pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: 13px; line-height: 1.15; flex: 1; background: var(--bg); --ansi-default-fg: var(--text); --ansi-default-bg: var(--bg); }
+    pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: var(--font-mono); font-size: var(--capture-font-size); line-height: 1.15; flex: 1; background: var(--bg); --ansi-default-fg: var(--text); --ansi-default-bg: var(--bg); }
+    .font-size-btn { min-width: 44px; padding-left: 0; padding-right: 0; font-family: var(--font-ui); }
+    .font-size-btn.smaller { font-size: 12px; }
+    .font-size-btn.larger { font-size: 18px; font-weight: 700; }
     .inputbar { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px; border-top: 1px solid var(--border); background: var(--panel); }
     .command-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
     .command-actions button { min-width: 72px; }
@@ -93,6 +96,8 @@
             Lines
             <input id="linesInput" type="text" value="300" style="width:72px;" />
           </label>
+          <button id="decreaseFontSizeBtn" class="font-size-btn smaller" type="button" aria-label="Decrease capture text size" title="Decrease capture text size">A</button>
+          <button id="increaseFontSizeBtn" class="font-size-btn larger" type="button" aria-label="Increase capture text size" title="Increase capture text size">A</button>
           <button id="fitWidthBtn">Fit Width</button>
           <button id="refreshCaptureBtn">Reload</button>
         </div>

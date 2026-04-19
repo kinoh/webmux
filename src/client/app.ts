@@ -89,6 +89,8 @@ const statusEl = mustElement<HTMLDivElement>("status");
 const commandInputEl = mustElement<HTMLTextAreaElement>("commandInput");
 const linesInputEl = mustElement<HTMLInputElement>("linesInput");
 const sessionSelectEl = mustElement<HTMLSelectElement>("sessionSelect");
+const decreaseFontSizeBtn = mustElement<HTMLButtonElement>("decreaseFontSizeBtn");
+const increaseFontSizeBtn = mustElement<HTMLButtonElement>("increaseFontSizeBtn");
 const fitWidthBtn = mustElement<HTMLButtonElement>("fitWidthBtn");
 const refreshCaptureBtn = mustElement<HTMLButtonElement>("refreshCaptureBtn");
 const sendBtn = mustElement<HTMLButtonElement>("sendBtn");
@@ -111,6 +113,12 @@ let selectedSessionKey = "";
 let captureTimer: number | null = null;
 let lastCaptureRaw = "";
 let textMeasureContext: CanvasRenderingContext2D | null = null;
+
+const CAPTURE_FONT_SIZE_KEY = "webmux.captureFontSize";
+const DEFAULT_CAPTURE_FONT_SIZE = 13;
+const MIN_CAPTURE_FONT_SIZE = 11;
+const MAX_CAPTURE_FONT_SIZE = 20;
+const CAPTURE_FONT_SIZE_STEP = 1;
 
 function isCompactLayout(): boolean {
   return compactLayoutQuery.matches;
@@ -174,6 +182,52 @@ function getVisiblePanes(): PaneInfo[] {
 function setStatus(message: string, isError = false): void {
   statusEl.textContent = message;
   statusEl.className = `status${isError ? " error" : ""}`;
+}
+
+function clampCaptureFontSize(value: number): number {
+  return Math.min(MAX_CAPTURE_FONT_SIZE, Math.max(MIN_CAPTURE_FONT_SIZE, value));
+}
+
+function updateCaptureFontButtons(fontSize: number): void {
+  decreaseFontSizeBtn.disabled = fontSize <= MIN_CAPTURE_FONT_SIZE;
+  increaseFontSizeBtn.disabled = fontSize >= MAX_CAPTURE_FONT_SIZE;
+}
+
+function getStoredCaptureFontSize(): number {
+  try {
+    const storedValue = window.localStorage.getItem(CAPTURE_FONT_SIZE_KEY);
+    const parsedValue = storedValue ? Number.parseInt(storedValue, 10) : Number.NaN;
+    if (Number.isFinite(parsedValue)) {
+      return clampCaptureFontSize(parsedValue);
+    }
+  } catch {
+    // Ignore storage errors and fall back to the default size.
+  }
+  return DEFAULT_CAPTURE_FONT_SIZE;
+}
+
+function getCurrentCaptureFontSize(): number {
+  const rawValue = document.documentElement.style.getPropertyValue("--capture-font-size").trim();
+  const parsedValue = rawValue.endsWith("px") ? Number.parseFloat(rawValue) : Number.NaN;
+  if (Number.isFinite(parsedValue)) {
+    return clampCaptureFontSize(parsedValue);
+  }
+  return getStoredCaptureFontSize();
+}
+
+function setCaptureFontSize(fontSize: number): void {
+  const nextFontSize = clampCaptureFontSize(fontSize);
+  document.documentElement.style.setProperty("--capture-font-size", `${nextFontSize}px`);
+  updateCaptureFontButtons(nextFontSize);
+  try {
+    window.localStorage.setItem(CAPTURE_FONT_SIZE_KEY, String(nextFontSize));
+  } catch {
+    // Ignore storage errors and keep the in-memory font size.
+  }
+}
+
+function adjustCaptureFontSize(delta: number): void {
+  setCaptureFontSize(getCurrentCaptureFontSize() + delta);
 }
 
 function getSpecialKeyLabel(key: string): string {
@@ -598,6 +652,14 @@ fitWidthBtn.addEventListener("click", () => {
   void fitPaneWidthToCapture();
 });
 
+decreaseFontSizeBtn.addEventListener("click", () => {
+  adjustCaptureFontSize(-CAPTURE_FONT_SIZE_STEP);
+});
+
+increaseFontSizeBtn.addEventListener("click", () => {
+  adjustCaptureFontSize(CAPTURE_FONT_SIZE_STEP);
+});
+
 sessionSelectEl.addEventListener("change", async () => {
   selectedSessionKey = sessionSelectEl.value;
   const sessionPanes = panes.filter((pane) => `${pane.backendId}:${pane.sessionName}` === selectedSessionKey);
@@ -664,6 +726,7 @@ if (typeof compactLayoutQuery.addEventListener === "function") {
 }
 
 async function start(): Promise<void> {
+  setCaptureFontSize(getStoredCaptureFontSize());
   await loadConfig();
   await loadPanes();
   if (captureTimer !== null) {
