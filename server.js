@@ -56,6 +56,7 @@ const MOBILE_ACTION_ORDER = {
 };
 const EXTRA_SPECIAL_KEYS = [
   "DC",
+  "Escape",
   "Home",
   "End",
   "PageUp",
@@ -498,7 +499,7 @@ app.get("/", (_req, res) => {
         <button id="sendEnterBtn">Enter</button>
         <div id="primarySpecialKeys" class="special-key-row"></div>
         <div class="special-key-popover-wrap">
-          <button id="toggleSpecialKeysBtn" type="button" aria-expanded="false" aria-controls="specialKeyPopover">More</button>
+          <button id="toggleSpecialKeysBtn" type="button" aria-expanded="false" aria-controls="specialKeyPopover">...</button>
           <div id="specialKeyPopover" class="special-key-popover" hidden>
             <div id="extraSpecialKeys" class="special-key-grid"></div>
             <form id="customSpecialKeyForm" class="special-key-custom">
