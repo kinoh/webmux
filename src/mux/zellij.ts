@@ -42,6 +42,27 @@ function parseZellijSessionNames(stdout: string): string[] {
   );
 }
 
+function isVisuallyBlankLine(line: string): boolean {
+  return stripAnsi(line).trim().length === 0;
+}
+
+function trimToLastLines(text: string, lines: number): string {
+  if (lines <= 0) {
+    return "";
+  }
+
+  const parts = text.split("\n");
+  while (parts.length > 0 && isVisuallyBlankLine(parts.at(-1) || "")) {
+    parts.pop();
+  }
+
+  if (parts.length === 0) {
+    return "";
+  }
+
+  return `${parts.slice(-lines).join("\n")}\n`;
+}
+
 export function createZellijBackend(runCommand: (command: string, args: string[]) => Promise<string>): MuxBackend {
   const config: BackendClientConfig & { command: string } = {
     id: "zellij",
@@ -151,12 +172,21 @@ export function createZellijBackend(runCommand: (command: string, args: string[]
 
       return allPanes;
     },
-    async capturePane(paneId: string, _lines: number, sessionName?: string) {
+    async capturePane(paneId: string, lines: number, sessionName?: string) {
       const targetPane = parseTargetPaneId(paneId);
       if (!targetPane) {
         throw new Error("invalid paneId");
       }
-      return run([...buildSessionArgs(sessionName), "action", "dump-screen", "--pane-id", targetPane.fullId, "--full", "--ansi"]);
+      const output = await run([
+        ...buildSessionArgs(sessionName),
+        "action",
+        "dump-screen",
+        "--pane-id",
+        targetPane.fullId,
+        "--full",
+        "--ansi",
+      ]);
+      return trimToLastLines(output, lines);
     },
     async sendTextToPane(paneId: string, text: string, sessionName?: string) {
       const targetPane = parseTargetPaneId(paneId);
