@@ -87,23 +87,23 @@
   <main class="main">
     <section class="capture-wrap">
       <div class="header">
-        <div id="selectedTitle" class="title">paneを選んでね</div>
+        <div id="selectedTitle" class="title">Select a pane</div>
         <div class="toolbar">
           <label id="linesControl" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;">
-            行数
+            Lines
             <input id="linesInput" type="text" value="300" style="width:72px;" />
           </label>
-          <button id="fitWidthBtn">幅合わせ</button>
-          <button id="refreshCaptureBtn">再読込</button>
+          <button id="fitWidthBtn">Fit Width</button>
+          <button id="refreshCaptureBtn">Reload</button>
         </div>
       </div>
       <pre id="capture"></pre>
       <div id="status" class="status">ready</div>
     </section>
     <section class="inputbar">
-      <textarea id="commandInput" placeholder="送信する文字列を入力"></textarea>
+      <textarea id="commandInput" placeholder="Enter text to send"></textarea>
       <div class="command-actions">
-        <button id="sendBtn">送信</button>
+        <button id="sendBtn">Send</button>
         <button id="sendEnterBtn">Enter</button>
         <div id="primarySpecialKeys" class="special-key-row"></div>
         <div class="special-key-popover-wrap">

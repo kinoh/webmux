@@ -385,7 +385,7 @@ async function loadConfig() {
 }
 async function loadPanes() {
     try {
-        setStatus("pane一覧を取得中...");
+        setStatus("Loading pane list...");
         const data = await api("/api/panes");
         panes = data.panes;
         if (!selectedPaneKey || !panes.some((pane) => pane.paneKey === selectedPaneKey)) {
@@ -397,10 +397,10 @@ async function loadPanes() {
             await loadCapture();
         }
         else {
-            selectedTitleEl.textContent = "paneが見つからないよ";
+            selectedTitleEl.textContent = "No pane found";
             captureEl.innerHTML = "";
             lastCaptureRaw = "";
-            setStatus(data.errors?.length ? data.errors.join(" | ") : "paneなし");
+            setStatus(data.errors?.length ? data.errors.join(" | ") : "No panes available");
         }
     }
     catch (error) {
@@ -416,17 +416,17 @@ async function loadCapture() {
         selectedTitleEl.textContent = pane
             ? `[${pane.backendDisplayName}] ${pane.label} ${pane.paneId} / ${pane.title || "(no title)"}`
             : selectedPaneKey;
-        setStatus("capture取得中...");
+        setStatus("Loading capture...");
         const backendQuery = pane?.backendId ? `&backendId=${encodeURIComponent(pane.backendId)}` : "";
         const sessionQuery = pane?.sessionName ? `&sessionName=${encodeURIComponent(pane.sessionName)}` : "";
         const data = await api(`/api/capture?paneId=${encodeURIComponent(pane?.paneId || "")}&lines=${lines}${backendQuery}${sessionQuery}`);
         if (lastCaptureRaw !== data.content) {
             captureEl.innerHTML = renderAnsiToHtml(data.content);
             lastCaptureRaw = data.content;
-            setStatus("capture更新ずみ");
+            setStatus("Capture updated");
             return;
         }
-        setStatus("capture変更なし");
+        setStatus("Capture unchanged");
     }
     catch (error) {
         setStatus(error instanceof Error ? error.message : String(error), true);
@@ -434,7 +434,7 @@ async function loadCapture() {
 }
 async function sendInput(withEnter) {
     if (!selectedPaneKey) {
-        setStatus("paneを選んでね", true);
+        setStatus("Select a pane", true);
         return;
     }
     try {
@@ -452,7 +452,7 @@ async function sendInput(withEnter) {
         });
         commandInputEl.value = "";
         await loadCapture();
-        setStatus("送信したよ");
+        setStatus("Sent");
     }
     catch (error) {
         setStatus(error instanceof Error ? error.message : String(error), true);
@@ -460,7 +460,7 @@ async function sendInput(withEnter) {
 }
 async function sendSpecialKey(key, label) {
     if (!selectedPaneKey) {
-        setStatus("paneを選んでね", true);
+        setStatus("Select a pane", true);
         return;
     }
     try {
@@ -477,7 +477,7 @@ async function sendSpecialKey(key, label) {
         customSpecialKeyInputEl.value = "";
         setSpecialKeyPopoverOpen(false);
         await loadCapture();
-        setStatus(`${label} を送信したよ`);
+        setStatus(`Sent ${label}`);
     }
     catch (error) {
         setStatus(error instanceof Error ? error.message : String(error), true);
@@ -485,16 +485,16 @@ async function sendSpecialKey(key, label) {
 }
 async function fitPaneWidthToCapture() {
     if (!selectedPaneKey) {
-        setStatus("paneを選んでね", true);
+        setStatus("Select a pane", true);
         return;
     }
     const columns = getCaptureColumnCount();
     if (!columns) {
-        setStatus("表示幅を測れなかった", true);
+        setStatus("Could not measure the visible width", true);
         return;
     }
     try {
-        setStatus("pane幅を調整中...");
+        setStatus("Resizing pane width...");
         const pane = getSelectedPane();
         await api("/api/resize-pane", {
             method: "POST",
@@ -506,7 +506,7 @@ async function fitPaneWidthToCapture() {
             }),
         });
         await loadCapture();
-        setStatus(`pane幅を ${columns} 桁に合わせたよ`);
+        setStatus(`Pane width set to ${columns} columns`);
     }
     catch (error) {
         setStatus(error instanceof Error ? error.message : String(error), true);
@@ -545,7 +545,7 @@ customSpecialKeyFormEl.addEventListener("submit", async (event) => {
     event.preventDefault();
     const key = customSpecialKeyInputEl.value.trim();
     if (!key) {
-        setStatus(`${getSelectedBackendConfig().displayName} key name を入れてね`, true);
+        setStatus(`Enter a ${getSelectedBackendConfig().displayName} key name`, true);
         return;
     }
     await sendSpecialKey(key, key);
