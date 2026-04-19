@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>webmux</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0f1115; --panel: #171a21; --panel2: #1f2430; --border: #2d3445; --text: #e6e9ef; --muted: #9aa4b2; --accent: #78a6ff; --danger: #ff7b7b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: grid; grid-template-columns: 320px 1fr; }
+    .sidebar { border-right: 1px solid var(--border); background: var(--panel); overflow: auto; }
+    .main { display: grid; grid-template-rows: 1fr auto; min-width: 0; min-height: 0; }
+    .header { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid var(--border); background: var(--panel); gap: 12px; }
+    .title { font-size: 14px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .session-picker { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+    button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    .pane-list { padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .pane-item { padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); cursor: pointer; min-width: 0; }
+    .pane-item.active { border-color: var(--accent); outline: 1px solid var(--accent); }
+    .pane-item .line1 { font-weight: 700; margin-bottom: 4px; word-break: break-all; }
+    .pane-item .line2 { font-size: 12px; color: var(--muted); word-break: break-all; }
+    .capture-wrap { min-height: 0; display: flex; flex-direction: column; }
+    pre { margin: 0; padding: 14px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; line-height: 1.45; flex: 1; background: var(--bg); --ansi-default-fg: var(--text); --ansi-default-bg: var(--bg); }
+    .inputbar { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px; border-top: 1px solid var(--border); background: var(--panel); }
+    .command-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .command-actions button { min-width: 72px; }
+    .special-key-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .special-key-popover-wrap { position: relative; }
+    .special-key-popover { position: absolute; right: 0; bottom: calc(100% + 8px); width: min(360px, calc(100vw - 24px)); padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); display: grid; gap: 10px; z-index: 20; }
+    .special-key-popover[hidden] { display: none; }
+    .special-key-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .special-key-grid button { width: 100%; min-width: 0; }
+    .special-key-custom { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .special-key-hint { margin: 0; font-size: 12px; color: var(--muted); }
+    input[type="text"], select, textarea { width: 100%; background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; outline: none; }
+    textarea { min-height: 96px; resize: vertical; font: inherit; }
+    input[type="text"]:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    .status { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); background: var(--panel); }
+    .error { color: var(--danger); }
+    @media (max-width: 800px) {
+      body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+      .sidebar { position: sticky; top: 0; z-index: 10; border-right: 0; border-bottom: 1px solid var(--border); overflow: visible; }
+      .sidebar .header { align-items: flex-start; flex-wrap: wrap; padding-bottom: 8px; }
+      .sidebar .title { width: auto; white-space: nowrap; }
+      .session-picker { display: inline-flex; width: 100%; }
+      .session-picker select { flex: 1; min-width: 0; }
+      .pane-list { padding: 0 12px 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; }
+      .pane-item { padding: 8px 12px; border-radius: 10px; text-align: center; }
+      .pane-item .line1 { margin-bottom: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .pane-item .line2 { display: none; }
+      .main .header { align-items: flex-start; flex-wrap: wrap; }
+      .main .title { width: 100%; white-space: normal; }
+      .inputbar { grid-template-columns: 1fr; }
+      .command-actions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); position: relative; }
+      .command-actions button { width: 100%; min-width: 0; }
+      #sendBtn { order: 1; }
+      #sendEnterBtn { order: 6; }
+      .special-key-row { display: contents; }
+      .special-key-popover-wrap { position: static; order: 10; }
+      .special-key-popover { left: 0; right: 0; width: auto; max-width: none; }
+    }
+    @media (max-width: 480px) {
+      .header, .inputbar, pre, .status { padding-left: 10px; padding-right: 10px; }
+      .pane-list { padding-left: 10px; padding-right: 10px; }
+      button, input[type="text"], select, textarea { min-height: 42px; }
+      textarea { min-height: 96px; }
+      #linesInput { width: 64px !important; }
+    }
+  </style>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="header">
+      <div class="title">multiplexer panes</div>
+      <div class="toolbar">
+        <label class="session-picker">
+          <span>session</span>
+          <select id="sessionSelect"></select>
+        </label>
+      </div>
+    </div>
+    <div id="paneList" class="pane-list"></div>
+  </aside>
+  <main class="main">
+    <section class="capture-wrap">
+      <div class="header">
+        <div id="selectedTitle" class="title">paneを選んでね</div>
+        <div class="toolbar">
+          <label id="linesControl" style="font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;">
+            行数
+            <input id="linesInput" type="text" value="300" style="width:72px;" />
+          </label>
+          <button id="fitWidthBtn">幅合わせ</button>
+          <button id="refreshCaptureBtn">再読込</button>
+        </div>
+      </div>
+      <pre id="capture"></pre>
+      <div id="status" class="status">ready</div>
+    </section>
+    <section class="inputbar">
+      <textarea id="commandInput" placeholder="送信する文字列を入力"></textarea>
+      <div class="command-actions">
+        <button id="sendBtn">送信</button>
+        <button id="sendEnterBtn">Enter</button>
+        <div id="primarySpecialKeys" class="special-key-row"></div>
+        <div class="special-key-popover-wrap">
+          <button id="toggleSpecialKeysBtn" type="button" aria-expanded="false" aria-controls="specialKeyPopover">...</button>
+          <div id="specialKeyPopover" class="special-key-popover" hidden>
+            <div id="extraSpecialKeys" class="special-key-grid"></div>
+            <form id="customSpecialKeyForm" class="special-key-custom">
+              <input id="customSpecialKeyInput" type="text" placeholder="key name" spellcheck="false" />
+              <button type="submit">Send key</button>
+            </form>
+            <p id="specialKeyHint" class="special-key-hint"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

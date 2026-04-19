@@ -1,7 +1,7 @@
 import express, { type Request, type Response } from "express";
+import path from "path";
 
 import { createMuxRegistry } from "../mux/registry";
-import { renderIndex } from "../web/renderIndex";
 import { runCommand } from "./command";
 
 function clampPaneWidth(columns: number): number {
@@ -15,11 +15,17 @@ function errorMessage(error: unknown): string {
 export function createApp() {
   const app = express();
   const registry = createMuxRegistry(runCommand);
+  const publicDir = path.resolve(process.cwd(), "public");
 
   app.use(express.json({ limit: "64kb" }));
+  app.use(express.static(publicDir));
 
   app.get("/", (_req: Request, res: Response) => {
-    res.type("html").send(renderIndex({ clientBackendConfigs: registry.clientBackendConfigs }));
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+
+  app.get("/api/config", (_req: Request, res: Response) => {
+    res.json({ backendConfigs: registry.clientBackendConfigs });
   });
 
   app.get("/api/panes", async (_req: Request, res: Response) => {
