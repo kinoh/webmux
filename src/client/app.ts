@@ -115,6 +115,8 @@ let lastCaptureRaw = "";
 let textMeasureContext: CanvasRenderingContext2D | null = null;
 
 const CAPTURE_FONT_SIZE_KEY = "webmux.captureFontSize";
+const SELECTED_PANE_KEY = "webmux.selectedPaneKey";
+const SELECTED_SESSION_KEY = "webmux.selectedSessionKey";
 const DEFAULT_CAPTURE_FONT_SIZE = 13;
 const MIN_CAPTURE_FONT_SIZE = 11;
 const MAX_CAPTURE_FONT_SIZE = 20;
@@ -126,6 +128,10 @@ function isCompactLayout(): boolean {
 
 function getSessionKeys(): string[] {
   return [...new Set(panes.map((pane) => `${pane.backendId}:${pane.sessionName}`))];
+}
+
+function getPaneSessionKey(pane: PaneInfo): string {
+  return `${pane.backendId}:${pane.sessionName}`;
 }
 
 function getSessionLabel(sessionKey: string): string {
@@ -147,12 +153,42 @@ function getSelectedBackendConfig(): BackendClientConfig {
   return backendConfigById[pane.backendId] || backendConfigs[0];
 }
 
+function getStoredString(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredString(key: string, value: string | null): void {
+  try {
+    if (value === null) {
+      window.localStorage.removeItem(key);
+    } else {
+      window.localStorage.setItem(key, value);
+    }
+  } catch {
+    // Ignore storage errors and keep the in-memory selection.
+  }
+}
+
+function restoreStoredSelection(): void {
+  selectedPaneKey = getStoredString(SELECTED_PANE_KEY);
+  selectedSessionKey = getStoredString(SELECTED_SESSION_KEY) || "";
+}
+
+function persistSelection(): void {
+  setStoredString(SELECTED_PANE_KEY, selectedPaneKey);
+  setStoredString(SELECTED_SESSION_KEY, selectedSessionKey || null);
+}
+
 function syncSelectedSession(): void {
   const pane = getSelectedPane();
   const sessionKeys = getSessionKeys();
 
   if (pane) {
-    selectedSessionKey = `${pane.backendId}:${pane.sessionName}`;
+    selectedSessionKey = getPaneSessionKey(pane);
     return;
   }
 
@@ -176,7 +212,7 @@ function getVisiblePanes(): PaneInfo[] {
   if (!isCompactLayout()) {
     return panes;
   }
-  return panes.filter((pane) => `${pane.backendId}:${pane.sessionName}` === selectedSessionKey);
+  return panes.filter((pane) => getPaneSessionKey(pane) === selectedSessionKey);
 }
 
 function setStatus(message: string, isError = false): void {
@@ -492,6 +528,7 @@ function renderPanes(): void {
     el.addEventListener("click", async () => {
       selectedPaneKey = el.dataset.paneKey || null;
       syncSelectedSession();
+      persistSelection();
       renderPanes();
       await loadCapture();
     });
@@ -521,9 +558,13 @@ async function loadPanes(): Promise<void> {
     const data = await api<PanesResponse>("/api/panes");
     panes = data.panes;
     if (!selectedPaneKey || !panes.some((pane) => pane.paneKey === selectedPaneKey)) {
-      selectedPaneKey = panes[0]?.paneKey || null;
+      const sessionPane = panes.find((pane) => getPaneSessionKey(pane) === selectedSessionKey);
+      selectedPaneKey = sessionPane?.paneKey || panes[0]?.paneKey || null;
     }
     syncSelectedSession();
+    if (selectedPaneKey) {
+      persistSelection();
+    }
     renderPanes();
     if (selectedPaneKey) {
       await loadCapture();
@@ -662,10 +703,11 @@ increaseFontSizeBtn.addEventListener("click", () => {
 
 sessionSelectEl.addEventListener("change", async () => {
   selectedSessionKey = sessionSelectEl.value;
-  const sessionPanes = panes.filter((pane) => `${pane.backendId}:${pane.sessionName}` === selectedSessionKey);
+  const sessionPanes = panes.filter((pane) => getPaneSessionKey(pane) === selectedSessionKey);
   if (!sessionPanes.some((pane) => pane.paneKey === selectedPaneKey)) {
     selectedPaneKey = sessionPanes[0]?.paneKey || null;
   }
+  persistSelection();
   renderPanes();
   if (selectedPaneKey) {
     await loadCapture();
@@ -727,6 +769,7 @@ if (typeof compactLayoutQuery.addEventListener === "function") {
 
 async function start(): Promise<void> {
   setCaptureFontSize(getStoredCaptureFontSize());
+  restoreStoredSelection();
   await loadConfig();
   await loadPanes();
   if (captureTimer !== null) {

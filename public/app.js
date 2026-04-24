@@ -53,6 +53,8 @@ let captureTimer = null;
 let lastCaptureRaw = "";
 let textMeasureContext = null;
 const CAPTURE_FONT_SIZE_KEY = "webmux.captureFontSize";
+const SELECTED_PANE_KEY = "webmux.selectedPaneKey";
+const SELECTED_SESSION_KEY = "webmux.selectedSessionKey";
 const DEFAULT_CAPTURE_FONT_SIZE = 13;
 const MIN_CAPTURE_FONT_SIZE = 11;
 const MAX_CAPTURE_FONT_SIZE = 20;
@@ -62,6 +64,9 @@ function isCompactLayout() {
 }
 function getSessionKeys() {
     return [...new Set(panes.map((pane) => `${pane.backendId}:${pane.sessionName}`))];
+}
+function getPaneSessionKey(pane) {
+    return `${pane.backendId}:${pane.sessionName}`;
 }
 function getSessionLabel(sessionKey) {
     const [backendId, ...sessionParts] = sessionKey.split(":");
@@ -79,11 +84,40 @@ function getSelectedBackendConfig() {
     }
     return backendConfigById[pane.backendId] || backendConfigs[0];
 }
+function getStoredString(key) {
+    try {
+        return window.localStorage.getItem(key);
+    }
+    catch {
+        return null;
+    }
+}
+function setStoredString(key, value) {
+    try {
+        if (value === null) {
+            window.localStorage.removeItem(key);
+        }
+        else {
+            window.localStorage.setItem(key, value);
+        }
+    }
+    catch {
+        // Ignore storage errors and keep the in-memory selection.
+    }
+}
+function restoreStoredSelection() {
+    selectedPaneKey = getStoredString(SELECTED_PANE_KEY);
+    selectedSessionKey = getStoredString(SELECTED_SESSION_KEY) || "";
+}
+function persistSelection() {
+    setStoredString(SELECTED_PANE_KEY, selectedPaneKey);
+    setStoredString(SELECTED_SESSION_KEY, selectedSessionKey || null);
+}
 function syncSelectedSession() {
     const pane = getSelectedPane();
     const sessionKeys = getSessionKeys();
     if (pane) {
-        selectedSessionKey = `${pane.backendId}:${pane.sessionName}`;
+        selectedSessionKey = getPaneSessionKey(pane);
         return;
     }
     if (sessionKeys.includes(selectedSessionKey)) {
@@ -103,7 +137,7 @@ function getVisiblePanes() {
     if (!isCompactLayout()) {
         return panes;
     }
-    return panes.filter((pane) => `${pane.backendId}:${pane.sessionName}` === selectedSessionKey);
+    return panes.filter((pane) => getPaneSessionKey(pane) === selectedSessionKey);
 }
 function setStatus(message, isError = false) {
     statusEl.textContent = message;
@@ -411,6 +445,7 @@ function renderPanes() {
         el.addEventListener("click", async () => {
             selectedPaneKey = el.dataset.paneKey || null;
             syncSelectedSession();
+            persistSelection();
             renderPanes();
             await loadCapture();
         });
@@ -437,9 +472,13 @@ async function loadPanes() {
         const data = await api("/api/panes");
         panes = data.panes;
         if (!selectedPaneKey || !panes.some((pane) => pane.paneKey === selectedPaneKey)) {
-            selectedPaneKey = panes[0]?.paneKey || null;
+            const sessionPane = panes.find((pane) => getPaneSessionKey(pane) === selectedSessionKey);
+            selectedPaneKey = sessionPane?.paneKey || panes[0]?.paneKey || null;
         }
         syncSelectedSession();
+        if (selectedPaneKey) {
+            persistSelection();
+        }
         renderPanes();
         if (selectedPaneKey) {
             await loadCapture();
@@ -574,10 +613,11 @@ increaseFontSizeBtn.addEventListener("click", () => {
 });
 sessionSelectEl.addEventListener("change", async () => {
     selectedSessionKey = sessionSelectEl.value;
-    const sessionPanes = panes.filter((pane) => `${pane.backendId}:${pane.sessionName}` === selectedSessionKey);
+    const sessionPanes = panes.filter((pane) => getPaneSessionKey(pane) === selectedSessionKey);
     if (!sessionPanes.some((pane) => pane.paneKey === selectedPaneKey)) {
         selectedPaneKey = sessionPanes[0]?.paneKey || null;
     }
+    persistSelection();
     renderPanes();
     if (selectedPaneKey) {
         await loadCapture();
@@ -630,6 +670,7 @@ else {
 }
 async function start() {
     setCaptureFontSize(getStoredCaptureFontSize());
+    restoreStoredSelection();
     await loadConfig();
     await loadPanes();
     if (captureTimer !== null) {
